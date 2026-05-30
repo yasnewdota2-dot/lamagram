@@ -12,6 +12,20 @@ export const ChatList = () => {
   const { user } = useAuth();
   const { conversations, activeConvId, setActiveConv, typingByConv } = useMessenger();
 
+  const formatPreview = (lm) => {
+    if (!lm) return t("newConversation");
+    if (lm.type && lm.type !== "text") {
+      if (lm.type === "image") return `📷 ${t("photo")}`;
+      if (lm.type === "video") return `🎬 ${t("video")}`;
+      if (lm.type === "file") return `📎 ${lm.file_name || t("file")}`;
+      if (lm.type === "voice") {
+        const d = Math.floor(lm.duration_sec || 0);
+        return `🎤 ${t("voice")} ${d}s`;
+      }
+    }
+    return lm.text || "";
+  };
+
   if (!conversations || conversations.length === 0) {
     return (
       <div className="text-center text-xs text-[var(--gm-text-muted)] mt-6 px-4" data-testid="chat-list-empty">
@@ -31,7 +45,7 @@ export const ChatList = () => {
         const lastTextRaw = typing
           ? t("typing")
           : lastMsg
-          ? `${lastMsg.sender_id === user?.id ? `${t("you")}: ` : ""}${lastMsg.text}`
+          ? `${lastMsg.sender_id === user?.id ? `${t("you")}: ` : ""}${formatPreview(lastMsg)}`
           : t("newConversation");
         return (
           <motion.button

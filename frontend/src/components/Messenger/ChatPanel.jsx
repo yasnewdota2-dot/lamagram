@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { ArrowDown, Upload, MessageSquareText } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { useMessenger } from "../../lib/messenger";
@@ -8,9 +9,8 @@ import { OnlineDot } from "./OnlineDot";
 import { TypingDots } from "./TypingDots";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
-import { formatRelative } from "../../lib/time";
-import { isWithinMinutes } from "../../lib/time";
-import { MessageSquareText } from "lucide-react";
+import { Lightbox } from "./Lightbox";
+import { formatRelative, isWithinMinutes } from "../../lib/time";
 
 export const EmptyState = () => {
   const { t } = useI18n();
@@ -44,8 +44,14 @@ export const EmptyState = () => {
 export const ChatPanel = ({ conversation }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const { messagesByConv, typingByConv, presence } = useMessenger();
+  const { messagesByConv, typingByConv, presence, uploadMedia } = useMessenger();
   const scrollRef = useRef(null);
+  const prevLenRef = useRef(0);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [pendingNew, setPendingNew] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [toast, setToast] = useState("");
 
   const convId = conversation?.id;
   const messages = useMemo(
@@ -61,17 +67,83 @@ export const ChatPanel = ({ conversation }) => {
   const typingMap = (convId && typingByConv[convId]) || {};
   const otherTyping = !!(other && typingMap[other.id]);
 
-  useEffect(() => {
+  const scrollToBottom = (smooth = false) => {
     const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  };
+
+  useEffect(() => {
+    scrollToBottom(false);
+    prevLenRef.current = messages.length;
+    setPendingNew(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convId]);
+
+  useEffect(() => {
+    const len = messages.length;
+    if (len === prevLenRef.current) return;
+    const added = len - prevLenRef.current;
+    prevLenRef.current = len;
+    if (added <= 0) return;
+    const last = messages[len - 1];
+    const mine = last?.sender_id === user?.id;
+    if (autoScroll || mine) {
+      scrollToBottom(true);
+      setPendingNew(0);
+    } else {
+      setPendingNew((n) => n + added);
     }
-  }, [messages.length, convId, otherTyping]);
+  }, [messages.length, autoScroll, user?.id]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setAutoScroll(atBottom);
+    if (atBottom) setPendingNew(0);
+  };
+
+  // Drag-and-drop
+  const onDragOver = (e) => {
+    if (!convId) return;
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault();
+      setDragOver(true);
+    }
+  };
+  const onDragLeave = (e) => {
+    if (e.target === e.currentTarget) setDragOver(false);
+  };
+  const onDrop = async (e) => {
+    if (!convId) return;
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      setToast(t("fileTooLarge"));
+      setTimeout(() => setToast(""), 3000);
+      return;
+    }
+    try {
+      await uploadMedia(convId, file);
+    } catch (err) {
+      setToast(err?.response?.data?.detail || t("uploadFailed"));
+      setTimeout(() => setToast(""), 3000);
+    }
+  };
 
   if (!conversation) return <EmptyState />;
 
   return (
-    <div className="flex flex-col h-full" data-testid="chat-panel">
+    <div
+      className="flex flex-col h-full relative"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      data-testid="chat-panel"
+    >
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b border-white/10"
@@ -97,9 +169,7 @@ export const ChatPanel = ({ conversation }) => {
             ) : isOnline ? (
               <span>{t("online")}</span>
             ) : lastSeen ? (
-              <span>
-                {t("lastSeen")} {formatRelative(lastSeen, lang)}
-              </span>
+              <span>{t("lastSeen")} {formatRelative(lastSeen, lang)}</span>
             ) : (
               <span>{t("offline")}</span>
             )}
@@ -110,42 +180,97 @@ export const ChatPanel = ({ conversation }) => {
       {/* Messages */}
       <div
         ref={scrollRef}
+        onScroll={onScroll}
         className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
         data-testid="messages-scroll"
       >
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2 }}
-        >
-          {messages.length === 0 ? (
-            <div className="text-center text-sm text-[var(--gm-text-muted)] py-12">
-              {t("noMessagesYet")}
+        {messages.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-center" data-testid="empty-conversation">
+            <div className="max-w-xs">
+              <div className="text-5xl mb-3">👋</div>
+              <div className="text-white text-lg font-semibold">
+                {t("sayHi")} {other?.display_name || other?.username}
+              </div>
+              <div className="text-xs text-[var(--gm-text-muted)] mt-2">{t("sayHiSub")}</div>
             </div>
-          ) : (
-            messages.map((m, i) => {
-              const mine = m.sender_id === user?.id;
-              const prev = messages[i - 1];
-              const showAvatar =
-                !prev ||
-                prev.sender_id !== m.sender_id ||
-                !isWithinMinutes(prev.created_at, m.created_at, 2);
-              return (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  mine={mine}
-                  showAvatar={showAvatar}
-                  testId={`message-${m.id}`}
-                />
-              );
-            })
-          )}
-        </motion.div>
+          </div>
+        ) : (
+          messages.map((m, i) => {
+            const mine = m.sender_id === user?.id;
+            const prev = messages[i - 1];
+            const showAvatar =
+              !prev ||
+              prev.sender_id !== m.sender_id ||
+              !isWithinMinutes(prev.created_at, m.created_at, 2);
+            return (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                mine={mine}
+                showAvatar={showAvatar}
+                onOpenImage={setLightboxSrc}
+                testId={`message-${m.id}`}
+              />
+            );
+          })
+        )}
       </div>
 
+      {/* Scroll-down pill */}
+      {!autoScroll && pendingNew > 0 && (
+        <button
+          onClick={() => {
+            scrollToBottom(true);
+            setPendingNew(0);
+            setAutoScroll(true);
+          }}
+          className="absolute bottom-24 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full text-sm text-white"
+          style={{
+            background: "linear-gradient(135deg,#3B9EFF,#A78BFA)",
+            boxShadow: "0 10px 30px -10px rgba(59,158,255,0.55)",
+          }}
+          data-testid="scroll-to-bottom-pill"
+        >
+          <ArrowDown className="w-4 h-4" />
+          {pendingNew} {t("newMessages")}
+        </button>
+      )}
+
       {/* Composer */}
-      <Composer conversationId={convId} />
+      <Composer
+        conversationId={convId}
+        onUploadError={(msg) => {
+          setToast(msg);
+          setTimeout(() => setToast(""), 3000);
+        }}
+      />
+
+      {/* Drag overlay */}
+      {dragOver && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+          style={{ background: "rgba(59,158,255,0.18)", border: "2px dashed rgba(59,158,255,0.55)" }}
+          data-testid="drop-overlay"
+        >
+          <div className="text-center text-white">
+            <Upload className="w-10 h-10 mx-auto mb-2" />
+            <div className="text-lg font-semibold">{t("dropFile")}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl text-sm text-white z-30"
+          style={{ background: "rgba(255,80,80,0.16)", border: "1px solid rgba(255,80,80,0.35)" }}
+          data-testid="upload-toast"
+        >
+          {toast}
+        </div>
+      )}
+
+      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 };

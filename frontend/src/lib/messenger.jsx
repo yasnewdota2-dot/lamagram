@@ -68,6 +68,93 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  const uploadMedia = useCallback(async (convId, file, opts = {}) => {
+    const kind = opts.kind || (() => {
+      const m = (file.type || "");
+      if (m.startsWith("image/")) return "image";
+      if (m.startsWith("video/")) return "video";
+      if (m.startsWith("audio/")) return "voice";
+      return "file";
+    })();
+    const tmpId = `tmp-${Math.random().toString(36).slice(2, 10)}`;
+    const tmpUrl = URL.createObjectURL(file);
+    const nowIso = new Date().toISOString();
+    const tmpMsg = {
+      id: tmpId,
+      conversation_id: convId,
+      sender_id: userIdRef.current,
+      type: kind,
+      text: "",
+      media: {
+        url: null,
+        mime: file.type,
+        size_bytes: file.size,
+        file_name: file.name,
+        duration_sec: opts.duration_sec,
+        waveform: opts.waveform,
+      },
+      status: "uploading",
+      created_at: nowIso,
+      _progress: 0,
+      _localUrl: tmpUrl,
+    };
+    setMessagesByConv((prev) => ({
+      ...prev,
+      [convId]: [...(prev[convId] || []), tmpMsg],
+    }));
+
+    const form = new FormData();
+    form.append("conversation_id", convId);
+    form.append("kind", kind);
+    form.append("file", file);
+    if (opts.duration_sec !== undefined && opts.duration_sec !== null) {
+      form.append("duration_sec", String(opts.duration_sec));
+    }
+    if (opts.waveform) {
+      form.append("waveform", JSON.stringify(opts.waveform));
+    }
+
+    try {
+      const { data: real } = await api.post("/messages/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          if (!e.total) return;
+          const p = e.loaded / e.total;
+          setMessagesByConv((prev) => {
+            const arr = prev[convId];
+            if (!arr) return prev;
+            return {
+              ...prev,
+              [convId]: arr.map((m) => (m.id === tmpId ? { ...m, _progress: p } : m)),
+            };
+          });
+        },
+      });
+      setMessagesByConv((prev) => {
+        const arr = prev[convId] || [];
+        const withoutTmp = arr.filter((m) => m.id !== tmpId);
+        if (withoutTmp.some((m) => m.id === real.id)) {
+          return { ...prev, [convId]: withoutTmp };
+        }
+        return { ...prev, [convId]: [...withoutTmp, real] };
+      });
+      try { URL.revokeObjectURL(tmpUrl); } catch { /* ignore */ }
+      return real;
+    } catch (err) {
+      setMessagesByConv((prev) => {
+        const arr = prev[convId];
+        if (!arr) return prev;
+        return {
+          ...prev,
+          [convId]: arr.map((m) =>
+            m.id === tmpId ? { ...m, status: "failed", _error: err?.response?.data?.detail || err.message } : m
+          ),
+        };
+      });
+      throw err;
+    }
+  }, []);
+
   const markRead = useCallback(async (convId) => {
     try {
       await api.post(`/conversations/${convId}/read`);
@@ -146,10 +233,13 @@ export const MessengerProvider = ({ children }) => {
         setConversations((cs) => {
           const found = cs.find((c) => c.id === conversation_id);
           const lastMsg = {
-            text: message.text,
+            text: message.text || "",
             sender_id: message.sender_id,
             created_at: message.created_at,
             type: message.type || "text",
+            media_label_key: message.type && message.type !== "text" ? message.type : undefined,
+            file_name: message.media?.file_name,
+            duration_sec: message.media?.duration_sec,
           };
           let next;
           if (found) {
@@ -309,6 +399,15 @@ export const MessengerProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Sync unread count → document.title
+  useEffect(() => {
+    const total = conversations.reduce(
+      (s, c) => s + (c.unread_count || 0),
+      0
+    );
+    document.title = total > 0 ? `(${total}) Glass` : "Glass";
+  }, [conversations]);
+
   const value = {
     wsConnected,
     conversations,
@@ -318,6 +417,7 @@ export const MessengerProvider = ({ children }) => {
     activeConvId,
     setActiveConv,
     sendMessage,
+    uploadMedia,
     sendTyping,
     openOrCreateConversation,
     fetchConversations,

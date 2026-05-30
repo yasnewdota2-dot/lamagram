@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import re
 import uuid
+import json
 import logging
 import asyncio
 import shutil
@@ -15,7 +16,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Request, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
@@ -34,9 +35,23 @@ UPLOAD_DIR = Path(os.environ.get('UPLOAD_DIR', str(ROOT_DIR / 'uploads')))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 AVATAR_DIR = UPLOAD_DIR / 'avatars'
 AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+MEDIA_DIR = UPLOAD_DIR / 'media'
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
+
+ALLOWED_MIMES = {
+    "image": {"image/jpeg", "image/png", "image/webp", "image/gif"},
+    "video": {"video/mp4", "video/webm", "video/quicktime"},
+    "voice": {"audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac"},
+}
+MEDIA_EXT_MAP = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
+    "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+    "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a", "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/aac": ".aac",
+}
 
 # ---------------------------------------------------------------------------
 # Database
@@ -302,6 +317,7 @@ def public_message(m: dict) -> dict:
         "sender_id": m["sender_id"],
         "type": m.get("type", "text"),
         "text": m.get("text", ""),
+        "media": m.get("media"),
         "status": m.get("status", "sent"),
         "created_at": m["created_at"],
         "seen_at": m.get("seen_at"),
@@ -541,6 +557,156 @@ async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_
             if other_id:
                 await manager.send_to_user(other_id, payload)
     return {"updated": len(targets)}
+
+@api_router.post("/messages/upload")
+async def upload_message_media(
+    request: Request,
+    conversation_id: str = Form(...),
+    kind: str = Form(...),
+    file: UploadFile = File(...),
+    duration_sec: Optional[float] = Form(None),
+    waveform: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user),
+):
+    if kind not in ("image", "video", "file", "voice"):
+        raise HTTPException(400, "Invalid kind")
+
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > MAX_UPLOAD_BYTES + 1024:
+        raise HTTPException(413, "File too large (max 100MB)")
+
+    conv = await db.conversations.find_one({"_id": conversation_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+
+    ctype = (file.content_type or "application/octet-stream").lower()
+    if kind == "image" and not ctype.startswith("image/"):
+        raise HTTPException(400, "Unsupported image type")
+    if kind == "video" and not ctype.startswith("video/"):
+        raise HTTPException(400, "Unsupported video type")
+    if kind == "voice" and not ctype.startswith("audio/"):
+        raise HTTPException(400, "Unsupported voice type")
+    if kind in ALLOWED_MIMES and ctype not in ALLOWED_MIMES[kind]:
+        # We've already verified the broad category above; reject explicitly out-of-list mimes
+        raise HTTPException(400, f"Unsupported {kind} mime: {ctype}")
+
+    # Resolve extension
+    ext = MEDIA_EXT_MAP.get(ctype)
+    if not ext and file.filename and "." in file.filename:
+        ext = "." + file.filename.rsplit(".", 1)[-1].lower()[:8]
+    if not ext:
+        ext = ".bin"
+
+    now = datetime.now(timezone.utc)
+    folder = MEDIA_DIR / f"{now.year:04d}" / f"{now.month:02d}"
+    folder.mkdir(parents=True, exist_ok=True)
+    file_id = uuid.uuid4().hex
+    dest = folder / f"{file_id}{ext}"
+
+    total = 0
+    with dest.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                out.close()
+                try:
+                    dest.unlink()
+                except Exception:
+                    pass
+                raise HTTPException(413, "File too large (max 100MB)")
+            out.write(chunk)
+
+    media_url = f"/api/uploads/media/{now.year:04d}/{now.month:02d}/{file_id}{ext}"
+    media: dict = {
+        "url": media_url,
+        "mime": ctype,
+        "size_bytes": total,
+        "file_name": file.filename or f"upload{ext}",
+    }
+
+    # Image dimensions (best effort)
+    if kind == "image":
+        try:
+            from PIL import Image
+            with Image.open(dest) as im:
+                media["width"], media["height"] = im.size
+        except Exception:
+            pass
+
+    if kind == "voice":
+        if duration_sec is not None:
+            try:
+                media["duration_sec"] = float(duration_sec)
+            except Exception:
+                pass
+        if waveform:
+            try:
+                parsed = json.loads(waveform)
+                if isinstance(parsed, list):
+                    media["waveform"] = [max(0.0, min(1.0, float(x))) for x in parsed[:80]]
+            except Exception:
+                pass
+
+    other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
+    now_iso = now.isoformat()
+    initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+    msg = {
+        "_id": str(uuid.uuid4()),
+        "conversation_id": conversation_id,
+        "sender_id": current_user["_id"],
+        "type": kind,
+        "text": "",
+        "media": media,
+        "status": initial_status,
+        "created_at": now_iso,
+        "seen_at": None,
+        "delivered_at": now_iso if initial_status == "delivered" else None,
+        "deleted": False,
+    }
+    await db.messages.insert_one(msg)
+
+    # Last-message label (frontend will localize using type/file_name/duration)
+    label_text_fallback = {
+        "image": "Photo",
+        "video": "Video",
+        "file": media.get("file_name") or "File",
+        "voice": f"Voice {int(media.get('duration_sec') or 0)}s",
+    }[kind]
+    last = {
+        "text": label_text_fallback,
+        "sender_id": msg["sender_id"],
+        "created_at": now_iso,
+        "type": kind,
+        "media_label_key": kind,
+        "file_name": media.get("file_name") if kind == "file" else None,
+        "duration_sec": media.get("duration_sec") if kind == "voice" else None,
+    }
+    await db.conversations.update_one(
+        {"_id": conversation_id},
+        {"$set": {"last_message": last, "last_message_at": now_iso}},
+    )
+
+    pm = public_message(msg)
+    new_payload = {"type": "message_new", "message": pm, "conversation_id": conversation_id}
+    await manager.send_to_user(current_user["_id"], new_payload)
+    if other_id:
+        await manager.send_to_user(other_id, new_payload)
+        if initial_status == "delivered":
+            status_payload = {
+                "type": "message_status",
+                "message_id": msg["_id"],
+                "conversation_id": conversation_id,
+                "status": "delivered",
+                "at": now_iso,
+            }
+            await manager.send_to_user(current_user["_id"], status_payload)
+            await manager.send_to_user(other_id, status_payload)
+    return pm
 
 # ---------------------------------------------------------------------------
 # WebSocket — /api/ws
