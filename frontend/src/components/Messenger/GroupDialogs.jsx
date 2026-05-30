@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut, Loader2 } from "lucide-react";
+import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut, Loader2, Ban } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { useI18n } from "../../lib/i18n";
 import { InviteLinkSection, PublicHandleSection } from "./InfoSections";
@@ -286,8 +286,13 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
     addGroupMembers, removeGroupMember,
     promoteGroupAdmin, demoteGroupAdmin,
     searchUsers,
+    listMembers, listBanned, banMember, unbanMember, transferOwnership,
   } = useMessengerActions();
   const [members, setMembers] = useState([]);
+  const [memberQ, setMemberQ] = useState("");
+  const [banned, setBanned] = useState([]);
+  const [bannedOpen, setBannedOpen] = useState(false);
+  const [confirmAct, setConfirmAct] = useState(null); // {type:'ban'|'transfer', target}
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
@@ -298,20 +303,37 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
   const [error, setError] = useState("");
   const fileRef = useRef(null);
   const debTmr = useRef(null);
+  const memDebTmr = useRef(null);
 
   const isAdmin = !!conversation?.group?.is_admin;
+  const isOwner = !!conversation?.group?.is_owner;
   const convId = conversation?.id;
 
   useEffect(() => {
     if (open && convId) {
-      listGroupMembers(convId).then(setMembers).catch(() => {});
+      listMembers(convId, "group", "").then(setMembers).catch(() => {});
+      if (isAdmin) listBanned(convId, "group").then(setBanned).catch(() => setBanned([]));
       setTitleDraft(conversation?.group?.title || "");
       setDescDraft(conversation?.group?.description || "");
       setError("");
     } else {
       setEditingTitle(false); setEditingDesc(false); setAddOpen(false); setAddQuery("");
+      setMemberQ(""); setBannedOpen(false); setConfirmAct(null);
     }
-  }, [open, convId, listGroupMembers, conversation?.group?.title, conversation?.group?.description]);
+  }, [open, convId, listMembers, listBanned, isAdmin, conversation?.group?.title, conversation?.group?.description]);
+
+  // Debounced search of members
+  useEffect(() => {
+    if (!open || !convId) return;
+    if (memDebTmr.current) clearTimeout(memDebTmr.current);
+    memDebTmr.current = setTimeout(async () => {
+      try {
+        const r = await listMembers(convId, "group", memberQ);
+        setMembers(r || []);
+      } catch {}
+    }, 250);
+    return () => memDebTmr.current && clearTimeout(memDebTmr.current);
+  }, [memberQ, open, convId, listMembers]);
 
   useEffect(() => {
     if (debTmr.current) clearTimeout(debTmr.current);
@@ -345,13 +367,26 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
     catch (err) { setError(err?.response?.data?.detail || err.message); }
     if (fileRef.current) fileRef.current.value = "";
   };
-  const refreshMembers = () => listGroupMembers(convId).then(setMembers).catch(() => {});
+  const refreshMembers = () => listMembers(convId, "group", memberQ).then(setMembers).catch(() => {});
+  const refreshBanned = () => listBanned(convId, "group").then(setBanned).catch(() => setBanned([]));
   const handleAdd = async (u) => {
     try { await addGroupMembers(convId, [u.id]); refreshMembers(); setAddQuery(""); }
     catch (e) { setError(e?.response?.data?.detail || e.message); }
   };
   const handleRemove = async (uid) => {
     try { await removeGroupMember(convId, uid); refreshMembers(); }
+    catch (e) { setError(e?.response?.data?.detail || e.message); }
+  };
+  const handleBan = async (uid) => {
+    try { await banMember(convId, uid, "group"); refreshMembers(); refreshBanned(); }
+    catch (e) { setError(e?.response?.data?.detail || e.message); }
+  };
+  const handleUnban = async (uid) => {
+    try { await unbanMember(convId, uid, "group"); refreshBanned(); }
+    catch (e) { setError(e?.response?.data?.detail || e.message); }
+  };
+  const handleTransfer = async (uid) => {
+    try { await transferOwnership(convId, uid, "group"); refreshMembers(); }
     catch (e) { setError(e?.response?.data?.detail || e.message); }
   };
   const handlePromote = async (uid) => {
@@ -474,9 +509,29 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
           </div>
         )}
 
+        <div className="px-5 pb-2">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}>
+            <Search className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+            <input
+              value={memberQ}
+              onChange={(e) => setMemberQ(e.target.value)}
+              placeholder={t("searchMembers")}
+              className="bg-transparent outline-none flex-1 text-sm"
+              style={{ color: "var(--text-primary)" }}
+              data-testid="group-info-member-search"
+            />
+            {memberQ && (
+              <button onClick={() => setMemberQ("")} className="p-0.5 rounded text-white/55 hover:text-white" aria-label="clear">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="px-3 pb-3 max-h-[40vh] overflow-y-auto" data-testid="group-info-members-list">
           {members.map((m) => {
             const isMe = m.id === user?.id;
+            const isMemberOwner = !!m.is_owner;
             return (
               <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl group" data-testid={`group-info-member-${m.username}`}>
                 <UserAvatar user={m} size={36} />
@@ -484,19 +539,31 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
                   <div className="text-sm text-white truncate">{m.display_name || m.username}{isMe && <span className="text-[10px] text-white/55"> ({t("you").trim() || "you"})</span>}</div>
                   <div className="text-[10px] text-white/45 truncate">@{m.username}</div>
                 </div>
-                {m.is_admin && (
+                {isMemberOwner ? (
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-md" style={{ background: "linear-gradient(135deg, #F59E0B, #FBBF24)", border: "1px solid rgba(245,158,11,0.5)", color: "#1a1305" }} data-testid={`group-info-owner-badge-${m.username}`}>
+                    <Crown className="inline w-2.5 h-2.5 mr-0.5" />{t("owner")}
+                  </span>
+                ) : m.is_admin && (
                   <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-md" style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#C9B8FF" }} data-testid={`group-info-admin-badge-${m.username}`}>
                     <Crown className="inline w-2.5 h-2.5 mr-0.5" />{t("adminLabel")}
                   </span>
                 )}
-                {isAdmin && !isMe && (
+                {isAdmin && !isMe && !isMemberOwner && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {m.is_admin ? (
                       <button onClick={() => handleDemote(m.id)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" data-testid={`group-info-demote-${m.username}`}>{t("demote")}</button>
                     ) : (
                       <button onClick={() => handlePromote(m.id)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" data-testid={`group-info-promote-${m.username}`}>{t("promote")}</button>
                     )}
-                    <button onClick={() => handleRemove(m.id)} className="p-1 rounded-md text-red-300 hover:bg-white/5" data-testid={`group-info-remove-${m.username}`}>
+                    {isOwner && m.is_admin && (
+                      <button onClick={() => setConfirmAct({ type: "transfer", target: m })} className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-300" data-testid={`group-info-transfer-${m.username}`} title={t("transferOwnership")}>
+                        <Crown className="inline w-3 h-3" />
+                      </button>
+                    )}
+                    <button onClick={() => setConfirmAct({ type: "ban", target: m })} className="p-1 rounded-md text-red-300 hover:bg-white/5" data-testid={`group-info-ban-${m.username}`} title={t("banFromGroup")}>
+                      <Ban className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleRemove(m.id)} className="p-1 rounded-md text-red-300 hover:bg-white/5" data-testid={`group-info-remove-${m.username}`} title={t("remove") || "Remove"}>
                       <UserMinus className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -505,6 +572,67 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
             );
           })}
         </div>
+
+        {isAdmin && banned.length > 0 && (
+          <div className="px-5 pb-3" data-testid="group-info-banned-section">
+            <button
+              onClick={() => setBannedOpen((v) => !v)}
+              className="w-full flex items-center justify-between text-[11px] uppercase tracking-wider mb-1"
+              style={{ color: "var(--text-muted)" }}
+              data-testid="group-info-banned-toggle"
+            >
+              <span>{t("bannedUsers")} · {banned.length}</span>
+              <span>{bannedOpen ? "−" : "+"}</span>
+            </button>
+            {bannedOpen && (
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto" data-testid="group-info-banned-list">
+                {banned.map((b) => (
+                  <div key={b.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ background: "var(--bg-glass)" }} data-testid={`group-info-banned-${b.username}`}>
+                    <UserAvatar user={b} size={28} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs truncate" style={{ color: "var(--text-primary)" }}>{b.display_name || b.username}</div>
+                      <div className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>@{b.username}</div>
+                    </div>
+                    <button onClick={() => handleUnban(b.id)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" style={{ color: "var(--text-secondary)" }} data-testid={`group-info-unban-${b.username}`}>
+                      {t("unban")}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {confirmAct && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setConfirmAct(null)} data-testid="group-info-confirm-overlay">
+            <div className="rounded-2xl p-5 max-w-sm w-full" style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", backdropFilter: "blur(20px)" }} onClick={(e) => e.stopPropagation()} data-testid="group-info-confirm-dialog">
+              <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                {confirmAct.type === "ban" ? t("banFromGroup") : t("transferOwnership")}
+              </div>
+              <div className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+                {confirmAct.type === "ban"
+                  ? t("banConfirm").replace("{name}", confirmAct.target.display_name || confirmAct.target.username)
+                  : t("transferOwnershipConfirm").replace("{name}", confirmAct.target.display_name || confirmAct.target.username)}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={() => setConfirmAct(null)} className="px-3 py-1.5 rounded-lg text-sm" style={{ color: "var(--text-secondary)" }} data-testid="group-info-confirm-cancel">{t("cancel")}</button>
+                <button
+                  onClick={async () => {
+                    const t2 = confirmAct.target.id;
+                    const isBan = confirmAct.type === "ban";
+                    setConfirmAct(null);
+                    if (isBan) await handleBan(t2); else await handleTransfer(t2);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-sm text-white"
+                  style={confirmAct.type === "ban" ? { background: "#E5484D" } : { background: "linear-gradient(135deg, #F59E0B, #FBBF24)" }}
+                  data-testid="group-info-confirm-proceed"
+                >
+                  {confirmAct.type === "ban" ? t("ban") : t("transferOwnership")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && <div className="px-5 pb-2 text-xs text-red-300" data-testid="group-info-error">{error}</div>}
 

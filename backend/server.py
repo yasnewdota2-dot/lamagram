@@ -463,7 +463,9 @@ async def public_conversation(c: dict, me_id: str) -> dict:
             "avatar_url": c.get("avatar_url"),
             "description": c.get("description"),
             "member_count": len(c.get("participants", [])),
-            "is_admin": me_id in (c.get("admins") or []),
+            "is_admin": me_id in (c.get("admins") or []) or me_id == (c.get("owner_id") or c.get("created_by")),
+            "is_owner": me_id == (c.get("owner_id") or c.get("created_by")),
+            "owner_id": c.get("owner_id") or c.get("created_by"),
             "created_by": c.get("created_by"),
         }
     else:
@@ -1443,20 +1445,44 @@ async def _broadcast_conv_to_all(conv_id: str, payload: dict):
     for pid in conv.get("participants", []):
         await manager.send_to_user(pid, payload)
 
-async def _public_group_members(conv: dict) -> List[dict]:
+async def _public_group_members(conv: dict, q: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[dict]:
     ids = conv.get("participants", [])
     if not ids:
         return []
     users = {u["_id"]: u async for u in db.users.find({"_id": {"$in": ids}})}
     admins = set(conv.get("admins") or [])
+    owner_id = conv.get("owner_id") or conv.get("created_by")
+    out = []
+    qn = (q or "").strip().lower()
+    for uid in ids:
+        u = users.get(uid)
+        if not u:
+            continue
+        if qn:
+            dn = (u.get("display_name") or "").lower()
+            un = (u.get("username") or "").lower()
+            if qn not in dn and qn not in un:
+                continue
+        pu = public_user(u)
+        pu["is_admin"] = uid in admins or uid == owner_id
+        pu["is_owner"] = (uid == owner_id)
+        pu["is_online"] = manager.is_online(uid) or bool(u.get("is_online"))
+        out.append(pu)
+    # offset/limit slice (post-filter)
+    return out[max(0, offset): max(0, offset) + max(1, min(int(limit), 200))]
+
+
+async def _public_banned_members(conv: dict) -> List[dict]:
+    ids = conv.get("banned_users") or []
+    if not ids:
+        return []
+    users = {u["_id"]: u async for u in db.users.find({"_id": {"$in": ids}})}
     out = []
     for uid in ids:
         u = users.get(uid)
         if not u:
             continue
         pu = public_user(u)
-        pu["is_admin"] = uid in admins
-        pu["is_online"] = manager.is_online(uid) or bool(u.get("is_online"))
         out.append(pu)
     return out
 
@@ -1635,13 +1661,157 @@ async def demote_admin(conv_id: str, user_id: str, current_user: dict = Depends(
     return {"ok": True}
 
 @api_router.get("/groups/{conv_id}/members")
-async def list_group_members(conv_id: str, current_user: dict = Depends(get_current_user)):
+async def list_group_members(
+    conv_id: str,
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+):
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != "group":
         raise HTTPException(404, "Group not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
-    return await _public_group_members(conv)
+    return await _public_group_members(conv, q=q, limit=limit, offset=offset)
+
+
+@api_router.get("/channels/{conv_id}/members")
+async def list_channel_members(
+    conv_id: str,
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    return await _public_group_members(conv, q=q, limit=limit, offset=offset)
+
+
+# ---------- Phase 8D — Ban / Transfer ownership (groups + channels) ----------
+async def _require_admin(conv: dict, user_id: str, kind_label: str):
+    if user_id not in (conv.get("admins") or []) and user_id != (conv.get("owner_id") or conv.get("created_by")):
+        raise HTTPException(403, f"Only admins can perform this action")
+
+
+async def _do_ban(conv_id: str, target_id: str, kind: str, current_user: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != kind:
+        raise HTTPException(404, f"{kind.capitalize()} not found")
+    await _require_admin(conv, current_user["_id"], kind)
+    owner_id = conv.get("owner_id") or conv.get("created_by")
+    if target_id == owner_id:
+        raise HTTPException(400, "Cannot ban the owner")
+    if target_id == current_user["_id"]:
+        raise HTTPException(400, "Cannot ban yourself")
+    target = await db.users.find_one({"_id": target_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await db.conversations.update_one(
+        {"_id": conv_id},
+        {
+            "$addToSet": {"banned_users": target_id},
+            "$pull": {"participants": target_id, "admins": target_id},
+        },
+    )
+    fresh = await db.conversations.find_one({"_id": conv_id})
+    payload = {"type": "member_banned", "conversation_id": conv_id, "user_id": target_id}
+    for pid in fresh.get("participants") or []:
+        await manager.send_to_user(pid, payload)
+    # Also notify the banned user so their client can drop the conv
+    await manager.send_to_user(target_id, {"type": "conversation_removed", "conversation_id": conv_id})
+    return {"ok": True, "banned_users": fresh.get("banned_users") or []}
+
+
+async def _do_unban(conv_id: str, target_id: str, kind: str, current_user: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != kind:
+        raise HTTPException(404, f"{kind.capitalize()} not found")
+    await _require_admin(conv, current_user["_id"], kind)
+    await db.conversations.update_one(
+        {"_id": conv_id}, {"$pull": {"banned_users": target_id}}
+    )
+    fresh = await db.conversations.find_one({"_id": conv_id})
+    return {"ok": True, "banned_users": fresh.get("banned_users") or []}
+
+
+async def _do_transfer(conv_id: str, target_id: str, kind: str, current_user: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != kind:
+        raise HTTPException(404, f"{kind.capitalize()} not found")
+    owner_id = conv.get("owner_id") or conv.get("created_by")
+    if current_user["_id"] != owner_id:
+        raise HTTPException(403, "Only the owner can transfer ownership")
+    if target_id == owner_id:
+        raise HTTPException(400, "Target is already owner")
+    if target_id not in (conv.get("participants") or []):
+        raise HTTPException(400, "Target is not a member")
+    if target_id not in (conv.get("admins") or []):
+        raise HTTPException(400, "Target must be an admin first")
+    # Set new owner; keep previous owner as admin (idempotent via $addToSet).
+    await db.conversations.update_one(
+        {"_id": conv_id},
+        {
+            "$set": {"owner_id": target_id},
+            "$addToSet": {"admins": owner_id},
+        },
+    )
+    fresh = await db.conversations.find_one({"_id": conv_id})
+    payload = {
+        "type": "owner_transferred",
+        "conversation_id": conv_id,
+        "new_owner_id": target_id,
+        "previous_owner_id": owner_id,
+    }
+    for pid in fresh.get("participants") or []:
+        await manager.send_to_user(pid, payload)
+    return {"ok": True, "owner_id": target_id}
+
+
+async def _list_banned(conv_id: str, kind: str, current_user: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != kind:
+        raise HTTPException(404, f"{kind.capitalize()} not found")
+    await _require_admin(conv, current_user["_id"], kind)
+    return await _public_banned_members(conv)
+
+
+@api_router.post("/groups/{conv_id}/ban/{user_id}")
+async def group_ban(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_ban(conv_id, user_id, "group", current_user)
+
+@api_router.delete("/groups/{conv_id}/ban/{user_id}")
+async def group_unban(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_unban(conv_id, user_id, "group", current_user)
+
+@api_router.get("/groups/{conv_id}/banned")
+async def group_banned(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _list_banned(conv_id, "group", current_user)
+
+@api_router.post("/groups/{conv_id}/transfer-owner/{user_id}")
+async def group_transfer(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_transfer(conv_id, user_id, "group", current_user)
+
+@api_router.post("/channels/{conv_id}/ban/{user_id}")
+async def channel_ban(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_ban(conv_id, user_id, "channel", current_user)
+
+@api_router.delete("/channels/{conv_id}/ban/{user_id}")
+async def channel_unban(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_unban(conv_id, user_id, "channel", current_user)
+
+@api_router.get("/channels/{conv_id}/banned")
+async def channel_banned(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _list_banned(conv_id, "channel", current_user)
+
+@api_router.post("/channels/{conv_id}/transfer-owner/{user_id}")
+async def channel_transfer(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    return await _do_transfer(conv_id, user_id, "channel", current_user)
+
 
 # --- Search ---
 
@@ -2009,6 +2179,10 @@ async def join_conversation(body: JoinRequest, current_user: dict = Depends(get_
             raise HTTPException(404, "Invite not found")
     if conv.get("kind") in ("dm", "saved"):
         raise HTTPException(400, "DMs and Saved Messages are not joinable")
+    # Phase 8D: banned users cannot rejoin via link or handle.
+    if current_user["_id"] in (conv.get("banned_users") or []):
+        label = "channel" if conv.get("kind") == "channel" else "group"
+        raise HTTPException(403, f"You are banned from this {label}")
     return await _add_participant_and_broadcast(conv, current_user)
 
 @api_router.get("/discover")
@@ -2464,6 +2638,22 @@ async def on_startup():
             )
     except Exception as _e:
         logger.warning(f"pinned backfill skipped: {_e}")
+
+    # Phase 8D: backfill owner_id (← created_by) + banned_users=[] on groups & channels
+    try:
+        res_p8d1 = await db.conversations.update_many(
+            {"kind": {"$in": ["group", "channel"]}, "banned_users": {"$exists": False}},
+            {"$set": {"banned_users": []}},
+        )
+        # Set owner_id where missing: fall back to created_by
+        async for c in db.conversations.find({"kind": {"$in": ["group", "channel"]}, "owner_id": {"$exists": False}}):
+            owner = c.get("created_by")
+            if owner:
+                await db.conversations.update_one({"_id": c["_id"]}, {"$set": {"owner_id": owner}})
+        if res_p8d1.modified_count:
+            logger.info(f"Migration (Phase 8D): backfilled banned_users=[] on {res_p8d1.modified_count} groups/channels")
+    except Exception as _e:
+        logger.warning(f"phase8D backfill skipped: {_e}")
 
     count = await db.users.count_documents({})
     if count == 0:

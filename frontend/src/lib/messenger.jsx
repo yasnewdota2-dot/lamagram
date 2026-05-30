@@ -435,6 +435,33 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  // Phase 8D: member admin (groups & channels)
+  const listMembers = useCallback(async (convId, kind, q = "") => {
+    const path = kind === "channel" ? `/channels/${convId}/members` : `/groups/${convId}/members`;
+    const { data } = await api.get(path, { params: q ? { q } : {} });
+    return data;
+  }, []);
+  const listBanned = useCallback(async (convId, kind) => {
+    const path = kind === "channel" ? `/channels/${convId}/banned` : `/groups/${convId}/banned`;
+    const { data } = await api.get(path);
+    return data;
+  }, []);
+  const banMember = useCallback(async (convId, userId, kind) => {
+    const path = kind === "channel" ? `/channels/${convId}/ban/${userId}` : `/groups/${convId}/ban/${userId}`;
+    const { data } = await api.post(path);
+    return data;
+  }, []);
+  const unbanMember = useCallback(async (convId, userId, kind) => {
+    const path = kind === "channel" ? `/channels/${convId}/ban/${userId}` : `/groups/${convId}/ban/${userId}`;
+    const { data } = await api.delete(path);
+    return data;
+  }, []);
+  const transferOwnership = useCallback(async (convId, userId, kind) => {
+    const path = kind === "channel" ? `/channels/${convId}/transfer-owner/${userId}` : `/groups/${convId}/transfer-owner/${userId}`;
+    const { data } = await api.post(path);
+    return data;
+  }, []);
+
   // Phase 8B: block / unblock / report
   const blockUser = useCallback(async (userId) => {
     const { data } = await api.post(`/users/${userId}/block`);
@@ -1135,6 +1162,11 @@ export const MessengerProvider = ({ children }) => {
       pinMessage,
       unpinMessage,
       listPinned,
+      listMembers,
+      listBanned,
+      banMember,
+      unbanMember,
+      transferOwnership,
     }),
     [
       sendMessage,
@@ -1183,6 +1215,11 @@ export const MessengerProvider = ({ children }) => {
       pinMessage,
       unpinMessage,
       listPinned,
+      listMembers,
+      listBanned,
+      banMember,
+      unbanMember,
+      transferOwnership,
     ]
   );
 
