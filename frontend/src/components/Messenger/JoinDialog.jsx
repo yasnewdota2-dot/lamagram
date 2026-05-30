@@ -269,7 +269,7 @@ export const JoinDialog = ({ open, onOpenChange, onJoined }) => {
                 data-testid="paste-invite-input"
               />
               <div className="mt-1.5 text-[11px] text-white/45">
-                Example: https://yourapp/join/abc123…  or just abc123
+                {t("inviteLinkExampleHint")}
               </div>
               {pasteErr && (
                 <div className="mt-2 text-xs text-red-300" data-testid="paste-invite-error">

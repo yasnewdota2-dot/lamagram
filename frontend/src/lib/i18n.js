@@ -196,6 +196,7 @@ const DICTIONARY = {
     linkInvalidLong: "This invite link is invalid or expired",
     handleNotFoundLong: "This handle is not a public group or channel",
     goToHome: "Go to Home",
+    inviteLinkExampleHint: "Example: https://yourapp/join/abc123…  or just abc123",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -392,6 +393,7 @@ const DICTIONARY = {
     linkInvalidLong: "این لینک دعوت نامعتبر یا منقضی شده است",
     handleNotFoundLong: "این آدرس به گروه یا کانال عمومی متعلق نیست",
     goToHome: "بازگشت به خانه",
+    inviteLinkExampleHint: "نمونه: https://yourapp/join/abc123…  یا فقط abc123",
   },
 };
 
