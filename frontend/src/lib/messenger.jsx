@@ -408,6 +408,33 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  // Phase 8B: delete conversation (DM / saved only)
+  const deleteConversation = useCallback(async (convId) => {
+    await api.delete(`/conversations/${convId}`);
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.filter((c) => c.id !== convId),
+      messagesByConv: Object.fromEntries(
+        Object.entries(s.messagesByConv).filter(([k]) => k !== convId)
+      ),
+      activeConvId: s.activeConvId === convId ? null : s.activeConvId,
+    }));
+  }, []);
+
+  // Phase 8B: block / unblock / report
+  const blockUser = useCallback(async (userId) => {
+    const { data } = await api.post(`/users/${userId}/block`);
+    return data;
+  }, []);
+  const unblockUser = useCallback(async (userId) => {
+    const { data } = await api.delete(`/users/${userId}/block`);
+    return data;
+  }, []);
+  const reportUser = useCallback(async (userId, reason) => {
+    const { data } = await api.post(`/users/${userId}/report`, { reason: reason || null });
+    return data;
+  }, []);
+
   // Composer per-conversation state (reply target / edit target)
   const setReplyTarget = useCallback((convId, replyTo) => {
     store.set((s) => ({
@@ -1049,6 +1076,10 @@ export const MessengerProvider = ({ children }) => {
       listStarred,
       toggleReaction,
       updateUsername,
+      deleteConversation,
+      blockUser,
+      unblockUser,
+      reportUser,
     }),
     [
       sendMessage,
@@ -1090,6 +1121,10 @@ export const MessengerProvider = ({ children }) => {
       listStarred,
       toggleReaction,
       updateUsername,
+      deleteConversation,
+      blockUser,
+      unblockUser,
+      reportUser,
     ]
   );
 

@@ -626,6 +626,11 @@ async def create_or_get_conversation(body: CreateConversationRequest, current_us
     other = await db.users.find_one({"_id": other_id})
     if not other:
         raise HTTPException(404, "User not found")
+    # Block enforcement: cannot start a DM if either side has blocked the other.
+    if other_id in (current_user.get("blocked_users") or []):
+        raise HTTPException(403, "You have blocked this user")
+    if current_user["_id"] in (other.get("blocked_users") or []):
+        raise HTTPException(403, "Cannot start chat with this user")
     participants = sorted([current_user["_id"], other_id])
     existing = await db.conversations.find_one({"participants": participants})
     if existing:
@@ -778,6 +783,18 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
     other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
     is_saved = conv.get("kind") == "saved"
     is_channel = conv.get("kind") == "channel"
+    # Phase 8B: silent block enforcement in DMs (Telegram-style — no error leaks).
+    # If the recipient has blocked the sender, accept the message into the sender's
+    # own thread but do NOT broadcast or store-mirror to the blocked recipient.
+    is_dm = conv.get("kind") in (None, "dm") and other_id is not None and not is_saved and not is_channel
+    blocked_by_other = False
+    if is_dm:
+        other_user = await db.users.find_one({"_id": other_id})
+        if other_user and current_user["_id"] in (other_user.get("blocked_users") or []):
+            blocked_by_other = True
+        elif other_id in (current_user.get("blocked_users") or []):
+            # Sender has blocked recipient — explicit error (sender's own action)
+            raise HTTPException(403, "You have blocked this user; unblock to send messages")
     now = datetime.now(timezone.utc).isoformat()
     if is_saved:
         initial_status = "seen"
@@ -818,11 +835,13 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         for pid in conv["participants"]:
             await manager.send_to_user(pid, new_payload)
     else:
+        # DM / saved: always echo to sender; suppress broadcast to recipient
+        # if recipient has blocked the sender (silent block — Telegram-style).
         await manager.send_to_user(current_user["_id"], new_payload)
-        if other_id:
+        if other_id and not blocked_by_other:
             await manager.send_to_user(other_id, new_payload)
     # Status (delivered) broadcast — skip entirely for channels
-    if not is_channel and other_id and initial_status == "delivered":
+    if not is_channel and other_id and initial_status == "delivered" and not blocked_by_other:
         status_payload = {
             "type": "message_status",
             "message_id": msg["_id"],
@@ -2047,6 +2066,99 @@ async def channel_invite_create(conv_id: str, current_user: dict = Depends(get_c
 async def channel_invite_revoke(conv_id: str, current_user: dict = Depends(get_current_user)):
     return await _revoke_invite(conv_id, "channel", current_user)
 
+# ---------------------------------------------------------------------------
+# Phase 8B — Conversation delete, block & report
+# ---------------------------------------------------------------------------
+@api_router.delete("/conversations/{conv_id}")
+async def delete_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a DM or Saved Messages conversation.
+    DM: deletes the conv + all its messages for BOTH sides and broadcasts
+        `conversation_removed` to the other participant.
+    Saved: clears the saved conv + its messages (lazily recreated on next save).
+    Groups / Channels use the existing leave / delete endpoints.
+    """
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    me_id = current_user["_id"]
+    if me_id not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    kind = conv.get("kind")
+    if kind in ("group", "channel"):
+        raise HTTPException(400, "Use group/channel leave or admin delete instead")
+    other_id = next((p for p in conv["participants"] if p != me_id), None)
+    await db.messages.delete_many({"conversation_id": conv_id})
+    await db.conversations.delete_one({"_id": conv_id})
+    payload = {"type": "conversation_removed", "conversation_id": conv_id}
+    await manager.send_to_user(me_id, payload)
+    if other_id and kind == "dm":
+        await manager.send_to_user(other_id, payload)
+    return {"ok": True}
+
+
+class ReportRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+@api_router.post("/users/{user_id}/block")
+async def block_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if user_id == current_user["_id"]:
+        raise HTTPException(400, "Cannot block yourself")
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$addToSet": {"blocked_users": user_id}},
+    )
+    return {"ok": True, "blocked_user_id": user_id}
+
+
+@api_router.delete("/users/{user_id}/block")
+async def unblock_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    await db.users.update_one(
+        {"_id": current_user["_id"]},
+        {"$pull": {"blocked_users": user_id}},
+    )
+    return {"ok": True, "unblocked_user_id": user_id}
+
+
+@api_router.get("/users/me/blocked")
+async def list_blocked_users(current_user: dict = Depends(get_current_user)):
+    blocked_ids = current_user.get("blocked_users") or []
+    if not blocked_ids:
+        return []
+    docs = await db.users.find({"_id": {"$in": blocked_ids}}).to_list(500)
+    return [
+        {
+            "id": d["_id"],
+            "username": d.get("username"),
+            "display_name": d.get("display_name"),
+            "avatar_url": d.get("avatar_url"),
+        }
+        for d in docs
+    ]
+
+
+@api_router.post("/users/{user_id}/report")
+async def report_user(user_id: str, body: ReportRequest, current_user: dict = Depends(get_current_user)):
+    if user_id == current_user["_id"]:
+        raise HTTPException(400, "Cannot report yourself")
+    target = await db.users.find_one({"_id": user_id})
+    if not target:
+        raise HTTPException(404, "User not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.reports.insert_one({
+        "_id": str(uuid.uuid4()),
+        "reporter_id": current_user["_id"],
+        "target_id": user_id,
+        "reason": (body.reason or "").strip()[:500] or None,
+        "created_at": now,
+    })
+    return {"ok": True}
+
+
 @api_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
     # Resolve token: prefer query param, fallback to Authorization header
@@ -2196,6 +2308,16 @@ async def on_startup():
     await db.conversations.create_index("participants")
     await db.messages.create_index([("conversation_id", 1), ("created_at", 1)])
     await db.messages.create_index([("conversation_id", 1), ("status", 1)])
+    # Phase 8B: backfill blocked_users on users
+    try:
+        res_p8 = await db.users.update_many(
+            {"blocked_users": {"$exists": False}},
+            {"$set": {"blocked_users": []}},
+        )
+        if res_p8.modified_count:
+            logger.info(f"Migration (Phase 8B): backfilled {res_p8.modified_count} users with blocked_users=[]")
+    except Exception as _e:
+        logger.warning(f"blocked_users backfill skipped: {_e}")
 
     count = await db.users.count_documents({})
     if count == 0:

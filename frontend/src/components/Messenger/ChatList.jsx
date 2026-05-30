@@ -1,12 +1,6 @@
-import React, { memo, useState } from "react";
+import React, { memo, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bookmark, Pin, BellOff, MoreHorizontal, PinOff, Bell, CheckCheck, Megaphone, MessageCircle } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "../ui/dropdown-menu";
+import { Bookmark, Pin, BellOff, PinOff, Bell, CheckCheck, Megaphone, MessageCircle, X, Trash2, Ban, Flag, Check } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -19,6 +13,7 @@ import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 import { listTime } from "../../lib/time";
 import { EmptyState } from "../EmptyState";
+import { useLongPress } from "../../lib/useLongPress";
 
 export const SavedAvatar = ({ size = 44, testId }) => {
   return (
@@ -57,7 +52,7 @@ const formatPreview = (lm, t) => {
  * across most state changes. typingMap is read INSIDE via a selector hook so
  * the parent doesn't have to re-render when typing toggles. */
 const ChatRow = memo(
-  function ChatRow({ conversation, meId, isActive, lang, t, setActiveConv, setPinned, setMuted, markRead }) {
+  function ChatRow({ conversation, meId, isActive, lang, t, setActiveConv, setPinned, setMuted, markRead, selectionMode, isSelected, onLongPress, onToggleSelect }) {
     const c = conversation;
     const isSaved = c.kind === "saved";
     const isChannel = c.kind === "channel";
@@ -65,8 +60,12 @@ const ChatRow = memo(
     const other = c.other_user;
     const typingMap = useTypingForConv(isSaved ? null : c.id);
     const typing = !isSaved && other && typingMap[other.id];
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [pinErr, setPinErr] = useState("");
+    // long-press hook: enters selection mode and selects this row
+    const handleLP = useCallback(() => {
+      if (isSaved) return; // Saved Messages can't be multi-selected
+      onLongPress?.(c.id);
+    }, [c.id, isSaved, onLongPress]);
+    const lp = useLongPress(handleLP, { threshold: 500 });
 
     const title = isSaved
       ? t("savedMessages")
@@ -96,19 +95,38 @@ const ChatRow = memo(
     return (
       <motion.div
         whileTap={{ scale: 0.99 }}
-        onClick={() => setActiveConv(c.id)}
+        {...lp}
+        onClick={(e) => {
+          if (lp.didFire()) return; // long-press already handled
+          if (selectionMode) {
+            e.preventDefault();
+            onToggleSelect?.(c.id);
+            return;
+          }
+          setActiveConv(c.id);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            setActiveConv(c.id);
+            if (selectionMode) onToggleSelect?.(c.id);
+            else setActiveConv(c.id);
           }
         }}
         role="button"
         tabIndex={0}
-        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40 relative transition-colors hover:bg-[var(--bg-glass-strong)]"
-        style={{ background: "transparent", border: "1px solid transparent" }}
+        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40 relative transition-colors hover:bg-[var(--bg-glass-strong)] select-none"
+        style={
+          isSelected
+            ? {
+                background: "rgba(59,158,255,0.10)",
+                border: "1px solid rgba(59,158,255,0.40)",
+                WebkitTouchCallout: "none",
+              }
+            : { background: "transparent", border: "1px solid transparent", WebkitTouchCallout: "none" }
+        }
         data-testid={`chat-list-item-${testIdSlug}`}
         data-active={isActive ? "true" : "false"}
+        data-selected={isSelected ? "true" : "false"}
       >
         {isActive && (
           <span
@@ -210,64 +228,20 @@ const ChatRow = memo(
           </div>
         </div>
         {!isSaved && (
-          <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 p-1 rounded-md transition-opacity"
-                  style={{ background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.10)" }}
-                  data-testid={`chat-row-menu-trigger-${testIdSlug}`}
-                  aria-label={t("actions")}
-                  onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
-                >
-                  <MoreHorizontal className="w-3.5 h-3.5 text-white/80" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="min-w-[180px]"
-                style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.10)" }}
-                data-testid={`chat-row-menu-${testIdSlug}`}
+          <div className="shrink-0 flex items-center justify-center w-7 h-7">
+            {selectionMode && (
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center"
+                style={
+                  isSelected
+                    ? { background: "var(--accent-gradient)", boxShadow: "0 0 10px var(--accent-glow)" }
+                    : { background: "transparent", border: "1.5px solid var(--border-glass)" }
+                }
+                data-testid={`chat-row-select-${testIdSlug}`}
               >
-                <DropdownMenuItem
-                  onClick={async () => {
-                    try {
-                      await setPinned(c.id, !c.is_pinned);
-                      setPinErr("");
-                    } catch (err) {
-                      setPinErr(err?.response?.data?.detail || err.message);
-                    }
-                  }}
-                  data-testid={`chat-row-action-pin-${testIdSlug}`}
-                >
-                  {c.is_pinned ? (
-                    <><PinOff className="w-4 h-4 mr-2" /> {t("unpin")}</>
-                  ) : (
-                    <><Pin className="w-4 h-4 mr-2" /> {t("pinToTop")}</>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setMuted(c.id, !c.is_muted)}
-                  data-testid={`chat-row-action-mute-${testIdSlug}`}
-                >
-                  {c.is_muted ? (
-                    <><Bell className="w-4 h-4 mr-2" /> {t("unmute")}</>
-                  ) : (
-                    <><BellOff className="w-4 h-4 mr-2" /> {t("muteNotifications")}</>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => markRead(c.id)}
-                  data-testid={`chat-row-action-read-${testIdSlug}`}
-                >
-                  <CheckCheck className="w-4 h-4 mr-2" /> {t("markAsRead")}
-                </DropdownMenuItem>
-                {pinErr && (
-                  <div className="px-2 py-1 text-[10px] text-red-300" data-testid={`chat-row-pin-error-${testIdSlug}`}>
-                    {pinErr}
-                  </div>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+              </div>
+            )}
           </div>
         )}
       </motion.div>
@@ -275,6 +249,8 @@ const ChatRow = memo(
   },
   (prev, next) => {
     if (prev.isActive !== next.isActive) return false;
+    if (prev.isSelected !== next.isSelected) return false;
+    if (prev.selectionMode !== next.selectionMode) return false;
     if (prev.lang !== next.lang) return false;
     if (prev.t !== next.t) return false;
     if (prev.setActiveConv !== next.setActiveConv) return false;
@@ -310,7 +286,77 @@ export const ChatList = () => {
   const { user } = useAuth();
   const conversations = useConversations();
   const activeConvId = useActiveConvId();
-  const { setActiveConv, setPinned, setMuted, markRead } = useMessengerActions();
+  const { setActiveConv, setPinned, setMuted, markRead, deleteConversation, blockUser, reportUser } = useMessengerActions();
+
+  // Phase 8B — selection mode state
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [confirmAction, setConfirmAction] = useState(null); // "delete" | "block" | "report" | null
+  const [reportReason, setReportReason] = useState("");
+  const selectionMode = selectedIds.size > 0;
+
+  const handleLongPress = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+  const handleToggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const exitSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setConfirmAction(null);
+    setReportReason("");
+  }, []);
+
+  // ESC to exit selection
+  React.useEffect(() => {
+    if (!selectionMode) return;
+    const onKey = (e) => { if (e.key === "Escape") exitSelection(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectionMode, exitSelection]);
+
+  const selectedConvs = React.useMemo(
+    () => conversations.filter((c) => selectedIds.has(c.id)),
+    [conversations, selectedIds]
+  );
+  const allPinned = selectedConvs.length > 0 && selectedConvs.every((c) => c.is_pinned);
+  const allMuted = selectedConvs.length > 0 && selectedConvs.every((c) => c.is_muted);
+  const onlyDMs = selectedConvs.length > 0 && selectedConvs.every((c) => c.kind === "dm" || (!c.kind && c.other_user));
+  const anyNonDM = selectedConvs.some((c) => c.kind === "group" || c.kind === "channel" || c.kind === "saved");
+
+  const doBulkPin = async () => {
+    for (const c of selectedConvs) { try { await setPinned(c.id, !allPinned); } catch {} }
+    exitSelection();
+  };
+  const doBulkMute = async () => {
+    for (const c of selectedConvs) { try { await setMuted(c.id, !allMuted); } catch {} }
+    exitSelection();
+  };
+  const doBulkDelete = async () => {
+    for (const c of selectedConvs) { try { await deleteConversation(c.id); } catch {} }
+    exitSelection();
+  };
+  const doBulkBlock = async () => {
+    for (const c of selectedConvs) {
+      const uid = c.other_user?.id;
+      if (uid) { try { await blockUser(uid); } catch {} }
+    }
+    exitSelection();
+  };
+  const doBulkReport = async () => {
+    for (const c of selectedConvs) {
+      const uid = c.other_user?.id;
+      if (uid) { try { await reportUser(uid, reportReason); } catch {} }
+    }
+    exitSelection();
+  };
 
   if (!conversations || conversations.length === 0) {
     return (
@@ -323,21 +369,162 @@ export const ChatList = () => {
   }
 
   return (
-    <div className="flex flex-col gap-1" data-testid="chat-list">
-      {conversations.map((c) => (
-        <ChatRow
-          key={c.id}
-          conversation={c}
-          meId={user?.id}
-          isActive={c.id === activeConvId}
-          lang={lang}
-          t={t}
-          setActiveConv={setActiveConv}
-          setPinned={setPinned}
-          setMuted={setMuted}
-          markRead={markRead}
-        />
-      ))}
-    </div>
+    <>
+      {selectionMode && (
+        <div
+          className="sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2 rounded-2xl mb-2"
+          style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", backdropFilter: "blur(16px)" }}
+          data-testid="chat-selection-toolbar"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={exitSelection}
+              className="p-1.5 rounded-lg hover:bg-white/10"
+              aria-label="close selection"
+              data-testid="selection-close"
+            >
+              <X className="w-4 h-4" style={{ color: "var(--text-primary)" }} />
+            </button>
+            <span className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }} data-testid="selection-count">
+              {t("selected").replace("{n}", String(selectedIds.size))}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={doBulkPin}
+              className="p-1.5 rounded-lg hover:bg-white/10"
+              aria-label={allPinned ? t("unpin") : t("pinToTop")}
+              title={allPinned ? t("unpin") : t("pinToTop")}
+              data-testid="selection-pin"
+            >
+              {allPinned ? <PinOff className="w-4 h-4" style={{ color: "var(--text-secondary)" }} /> : <Pin className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />}
+            </button>
+            <button
+              onClick={doBulkMute}
+              className="p-1.5 rounded-lg hover:bg-white/10"
+              aria-label={allMuted ? t("unmute") : t("muteNotifications")}
+              title={allMuted ? t("unmute") : t("muteNotifications")}
+              data-testid="selection-mute"
+            >
+              {allMuted ? <Bell className="w-4 h-4" style={{ color: "var(--text-secondary)" }} /> : <BellOff className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />}
+            </button>
+            <button
+              disabled={!onlyDMs}
+              onClick={() => setConfirmAction("block")}
+              className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label={t("block")}
+              title={t("block")}
+              data-testid="selection-block"
+            >
+              <Ban className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+            </button>
+            <button
+              disabled={anyNonDM}
+              onClick={() => setConfirmAction("delete")}
+              className="p-1.5 rounded-lg hover:bg-red-500/15 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label={t("deleteChat")}
+              title={t("deleteChat")}
+              data-testid="selection-delete"
+            >
+              <Trash2 className="w-4 h-4" style={{ color: "#E5484D" }} />
+            </button>
+            <button
+              disabled={!onlyDMs}
+              onClick={() => setConfirmAction("report")}
+              className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label={t("report")}
+              title={t("report")}
+              data-testid="selection-report"
+            >
+              <Flag className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.55)" }}
+          onClick={() => setConfirmAction(null)}
+          data-testid="selection-confirm-overlay"
+        >
+          <div
+            className="rounded-2xl p-5 max-w-sm w-full"
+            style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", backdropFilter: "blur(20px)" }}
+            onClick={(e) => e.stopPropagation()}
+            data-testid="selection-confirm-dialog"
+          >
+            <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+              {confirmAction === "delete" && t("deleteChats").replace("{n}", String(selectedIds.size))}
+              {confirmAction === "block" && t("block") + " · " + selectedIds.size}
+              {confirmAction === "report" && t("report") + " · " + selectedIds.size}
+            </div>
+            <div className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+              {confirmAction === "delete" && t("deleteChatsConfirm")}
+              {confirmAction === "block" && t("blockUsersConfirm")}
+              {confirmAction === "report" && (
+                <textarea
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  rows={3}
+                  placeholder={t("reportReason")}
+                  className="w-full rounded-lg p-2 text-sm"
+                  style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
+                  data-testid="report-reason-input"
+                />
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-3 py-1.5 rounded-lg text-sm"
+                style={{ color: "var(--text-secondary)" }}
+                data-testid="confirm-cancel"
+              >
+                {t("cancel")}
+              </button>
+              <button
+                onClick={() => {
+                  if (confirmAction === "delete") doBulkDelete();
+                  else if (confirmAction === "block") doBulkBlock();
+                  else if (confirmAction === "report") doBulkReport();
+                }}
+                className="px-3 py-1.5 rounded-lg text-sm text-white"
+                style={
+                  confirmAction === "delete"
+                    ? { background: "#E5484D" }
+                    : { background: "var(--accent-gradient)" }
+                }
+                data-testid="confirm-proceed"
+              >
+                {confirmAction === "delete" ? t("deleteChat") : confirmAction === "block" ? t("block") : t("report")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1" data-testid="chat-list">
+        {conversations.map((c) => (
+          <ChatRow
+            key={c.id}
+            conversation={c}
+            meId={user?.id}
+            isActive={c.id === activeConvId}
+            lang={lang}
+            t={t}
+            setActiveConv={setActiveConv}
+            setPinned={setPinned}
+            setMuted={setMuted}
+            markRead={markRead}
+            selectionMode={selectionMode}
+            isSelected={selectedIds.has(c.id)}
+            onLongPress={handleLongPress}
+            onToggleSelect={handleToggleSelect}
+          />
+        ))}
+      </div>
+    </>
   );
 };

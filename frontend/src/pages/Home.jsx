@@ -153,12 +153,6 @@ export default function Home() {
                   style={{ background: "var(--bg-glass-strong)", backdropFilter: "blur(18px)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
                   data-testid="sidebar-new-menu"
                 >
-                  <DropdownMenuItem
-                    onClick={() => { setQuery(""); requestAnimationFrame(() => document.querySelector('[data-testid="sidebar-search-input"]')?.focus()); }}
-                    data-testid="sidebar-action-new-chat"
-                  >
-                    <MessageSquare className="w-4 h-4 mr-2" /> {t("newChat")}
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowNewGroup(true)} data-testid="sidebar-action-new-group">
                     <Users className="w-4 h-4 mr-2" /> {t("newGroup")}
                   </DropdownMenuItem>
