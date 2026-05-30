@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare } from "lucide-react";
+import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -19,6 +19,7 @@ import { ForwardDialog } from "./ForwardDialog";
 import { GroupInfoDialog } from "./GroupDialogs";
 import { GroupAvatar } from "./GroupAvatar";
 import { StarredView } from "./StarredView";
+import { ChatSearchBar } from "./ChatSearchBar";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative, isWithinMinutes } from "../../lib/time";
 
