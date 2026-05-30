@@ -1,0 +1,53 @@
+{
+  "summary": "Glass Messenger Phase 4 (Saved Messages + Username-first search) fully verified. Backend 10/10 new tests pass + 72/72 full regression (Phase 1+2+3+4). Frontend: saved-pinned chat list, header title/subtitle, message persistence, @ hint chip (EN+FA), settings @username + copy-to-clipboard, RTL Persian localization, and DM header '· @username' suffix all confirmed working.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_glass_messenger_phase4.py",
+    "/app/test_reports/pytest/pytest_phase4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "POST /api/conversations/saved is idempotent and stores kind='saved' with single participant — correct contract.",
+    "GET /api/conversations partitions saved+dm and concatenates with saved first; dm sorted by last_message_at desc — pinned ordering enforced server-side (not relying on client).",
+    "GET /api/users/search correctly switches behaviour on leading '@' — username prefix matched via re.escape (safe from regex injection); falls back to username-prefix OR display_name-substring for unprefixed queries. Self excluded via _id $ne.",
+    "GET /api/users/by-username normalises to lower() before lookup (matches stored username casing). Returns 404 on miss.",
+    "SavedAvatar export from ChatList.jsx is now correctly imported by ChatPanel.jsx (earlier compile error in logs has been resolved — current build is green).",
+    "data-testid coverage for Phase 4 is complete: chat-list-item-saved, chat-list-saved-pinned-badge, chat-header-name, chat-header-presence, sidebar-search-input, search-username-hint, settings-username, copy-username-button, lang-fa-button, lang-en-button.",
+    "i18n strings (savedMessages, savedSubtitle, searchingUsernames, usernameCopied) present in both en and fa; FA strings verified at runtime ('پیام‌های ذخیره‌شده', 'فضای ابری شخصی شما', 'جستجوی یوزرنیم') and RTL dir='rtl' applied.",
+    "Clipboard write verified: navigator.clipboard.readText() returned '@alice' after clicking copy-username-button."
+  ],
+  "updated_files": ["/app/backend/tests/test_glass_messenger_phase4.py"],
+  "success_rate": {
+    "backend": "100% (72/72 — 10 new Phase4 + 62 regression)",
+    "frontend": "100% (all Phase 4 spec items verified including FA localization)"
+  },
+  "test_credentials": "alice/password123 (and bob, charlie) — from /app/memory/test_credentials.md",
+  "seed_data_creation": "Tests create a saved-conversation message 'Phase4-Saved-Hello-12345' and several TEST_saved_<uuid> messages in alice's saved conversation. Idempotent — safe to rerun.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 4 fully green. Backend tests: /app/backend/tests/test_glass_messenger_phase4.py (10 tests covering saved idempotency, pinned ordering, msg persistence, by-username lookup, @-prefix search, empty @ handling). Full suite run order: test_glass_messenger.py → _phase2.py → _phase3.py → _phase4.py = 72/72. Frontend testids confirmed working: chat-list-item-saved (always first), chat-list-saved-pinned-badge, chat-header-name='Saved Messages', chat-header-presence='Your personal cloud' (no online dot), composer works in saved (mine=true), sidebar-search-input + search-username-hint chip on '@a', settings-username='@alice', copy-username-button writes '@alice' to clipboard, lang-fa-button toggles dir='rtl' and localizes saved title/subtitle to Persian, regular DM header shows 'Online · @bob' (presence + @username). Backend at neon-glass-app.preview.emergentagent.com.",
+  "verified_phase4_items": {
+    "POST /api/conversations/saved idempotent + kind=saved + single participant": "PASS",
+    "GET /api/conversations returns saved first": "PASS",
+    "Text message in saved persists (POST + GET)": "PASS (verified via API: 'Phase4-Saved-Hello-12345' returned in messages with sender_id=alice)",
+    "Saved bob != Saved alice (per-user)": "PASS",
+    "GET /api/users/by-username/bob returns profile": "PASS",
+    "GET /api/users/by-username/unknown returns 404": "PASS",
+    "by-username case-insensitive (BOB → bob)": "PASS",
+    "GET /api/users/search?q=@al → username prefix matches (alice from bob's session)": "PASS",
+    "GET /api/users/search?q=@bo → returns bob": "PASS",
+    "GET /api/users/search?q=@ → returns []": "PASS",
+    "UI: chat-list-item-saved is first item with PINNED badge": "PASS",
+    "UI: chat header name='Saved Messages' + presence='Your personal cloud', no online dot": "PASS",
+    "UI: composer sends to saved + reload persists (verified via API too)": "PASS",
+    "UI: sidebar '@a' shows search-username-hint chip 'Searching usernames'": "PASS",
+    "UI: /settings shows '@alice' + copy-username-button writes '@alice' to clipboard": "PASS",
+    "UI: FA toggle → dir=rtl, saved title='پیام‌های ذخیره‌شده', subtitle='فضای ابری شخصی شما', hint='جستجوی یوزرنیم'": "PASS",
+    "UI: DM header presence shows '· @bob' next to Online": "PASS"
+  }
+}

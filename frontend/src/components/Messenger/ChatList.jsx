@@ -1,11 +1,29 @@
 import React from "react";
 import { motion } from "framer-motion";
+import { Bookmark, Pin } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { useMessenger } from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 import { listTime } from "../../lib/time";
+
+export const SavedAvatar = ({ size = 44, testId }) => {
+  return (
+    <div
+      className="rounded-full flex items-center justify-center text-white shrink-0"
+      style={{
+        width: size,
+        height: size,
+        background: "linear-gradient(135deg,#3B9EFF,#A78BFA)",
+        boxShadow: "0 10px 28px -10px rgba(59,158,255,0.55)",
+      }}
+      data-testid={testId || "saved-avatar"}
+    >
+      <Bookmark className="text-white" style={{ width: size * 0.46, height: size * 0.46 }} />
+    </div>
+  );
+};
 
 export const ChatList = () => {
   const { t, lang } = useI18n();
@@ -37,16 +55,33 @@ export const ChatList = () => {
   return (
     <div className="flex flex-col gap-1" data-testid="chat-list">
       {conversations.map((c) => {
+        const isSaved = c.kind === "saved";
         const other = c.other_user;
         const isActive = c.id === activeConvId;
         const lastMsg = c.last_message;
         const typing =
-          other && (typingByConv[c.id] || {})[other.id];
+          !isSaved && other && (typingByConv[c.id] || {})[other.id];
+
+        const title = isSaved
+          ? t("savedMessages")
+          : other?.display_name || other?.username || "Unknown";
+
         const lastTextRaw = typing
           ? t("typing")
           : lastMsg
-          ? `${lastMsg.sender_id === user?.id ? `${t("you")}: ` : ""}${formatPreview(lastMsg)}`
+          ? `${
+              isSaved
+                ? ""
+                : lastMsg.sender_id === user?.id
+                ? `${t("you")}: `
+                : ""
+            }${formatPreview(lastMsg)}`
+          : isSaved
+          ? t("savedSubtitle")
           : t("newConversation");
+
+        const testIdSlug = isSaved ? "saved" : other?.username || c.id;
+
         return (
           <motion.button
             key={c.id}
@@ -64,20 +99,40 @@ export const ChatList = () => {
                     border: "1px solid transparent",
                   }
             }
-            data-testid={`chat-list-item-${other?.username || c.id}`}
+            data-testid={`chat-list-item-${testIdSlug}`}
           >
             <div className="relative shrink-0">
-              <UserAvatar user={other} size={44} />
-              {other?.is_online && (
-                <span className="absolute -bottom-0.5 right-0">
-                  <OnlineDot online size={11} />
-                </span>
+              {isSaved ? (
+                <SavedAvatar size={44} testId="chat-list-saved-avatar" />
+              ) : (
+                <>
+                  <UserAvatar user={other} size={44} />
+                  {other?.is_online && (
+                    <span className="absolute -bottom-0.5 right-0">
+                      <OnlineDot online size={11} />
+                    </span>
+                  )}
+                </>
               )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-white font-medium text-sm truncate">
-                  {other?.display_name || other?.username || "Unknown"}
+                <div className="text-white font-medium text-sm truncate flex items-center gap-1.5">
+                  {title}
+                  {isSaved && (
+                    <span
+                      className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex items-center gap-0.5"
+                      style={{
+                        background: "rgba(167,139,250,0.14)",
+                        border: "1px solid rgba(167,139,250,0.3)",
+                        color: "#C9B8FF",
+                      }}
+                      data-testid="chat-list-saved-pinned-badge"
+                    >
+                      <Pin className="w-2.5 h-2.5" />
+                      {t("pinned")}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-[var(--gm-text-muted)] shrink-0">
                   {listTime(c.last_message_at || c.created_at, lang)}
@@ -100,7 +155,7 @@ export const ChatList = () => {
                         "linear-gradient(135deg,#3B9EFF,#A78BFA)",
                       boxShadow: "0 6px 14px -6px rgba(59,158,255,0.5)",
                     }}
-                    data-testid={`unread-badge-${other?.username || c.id}`}
+                    data-testid={`unread-badge-${testIdSlug}`}
                   >
                     {c.unread_count}
                   </span>
