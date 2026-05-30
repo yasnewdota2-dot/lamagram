@@ -1575,6 +1575,43 @@ async def list_starred(
     docs = await cur.to_list(limit)
     return [public_message(m) for m in docs]
 
+# --- Reactions ---
+
+class ReactionRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    emoji: str = Field(..., min_length=1, max_length=16)
+
+@api_router.post("/messages/{message_id}/reactions")
+async def toggle_reaction(message_id: str, body: ReactionRequest, current_user: dict = Depends(get_current_user)):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    if msg.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot react to a deleted message")
+    conv = await db.conversations.find_one({"_id": msg["conversation_id"]})
+    if not conv or current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    emoji = body.emoji.strip()
+    reactions = list(msg.get("reactions") or [])
+    existing_idx = next(
+        (i for i, r in enumerate(reactions) if r.get("user_id") == current_user["_id"] and r.get("emoji") == emoji),
+        -1,
+    )
+    if existing_idx >= 0:
+        reactions.pop(existing_idx)
+    else:
+        reactions.append({"user_id": current_user["_id"], "emoji": emoji})
+    await db.messages.update_one({"_id": message_id}, {"$set": {"reactions": reactions}})
+    payload = {
+        "type": "message_reaction",
+        "message_id": message_id,
+        "conversation_id": msg["conversation_id"],
+        "reactions": reactions,
+    }
+    for pid in conv.get("participants", []):
+        await manager.send_to_user(pid, payload)
+    return {"ok": True, "reactions": reactions}
+
 # ---------------------------------------------------------------------------
 # WebSocket — /api/ws
 # ---------------------------------------------------------------------------

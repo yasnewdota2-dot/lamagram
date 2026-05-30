@@ -1,15 +1,22 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Settings as SettingsIcon, Search, X } from "lucide-react";
+import { Settings as SettingsIcon, Search, X, Plus, MessageSquare, Users } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { useMessengerActions } from "../lib/messenger";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "../components/ui/dropdown-menu";
 import { GlassBackground } from "../components/GlassBackground";
 import { UserAvatar } from "../components/Avatar";
 import { ChatList } from "../components/Messenger/ChatList";
 import { SearchResults } from "../components/Messenger/SearchResults";
 import { ChatPanel } from "../components/Messenger/ChatPanel";
+import { NewGroupDialog } from "../components/Messenger/GroupDialogs";
 import { useConversations, useActiveConvId } from "../lib/messenger";
 
 export default function Home() {
@@ -19,6 +26,7 @@ export default function Home() {
   const conversations = useConversations();
   const activeConvId = useActiveConvId();
   const [query, setQuery] = useState("");
+  const [showNewGroup, setShowNewGroup] = useState(false);
 
   const activeConv = conversations.find((c) => c.id === activeConvId) || null;
 
@@ -71,29 +79,58 @@ export default function Home() {
             </div>
 
             {/* Search */}
-            <div className="relative mt-4" data-testid="sidebar-search">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gm-text-muted)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t("searchPlaceholder2")}
-                className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm text-white"
-                style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                }}
-                data-testid="sidebar-search-input"
-              />
-              {query && (
-                <button
-                  onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/10"
-                  aria-label="clear search"
-                  data-testid="sidebar-search-clear"
+            <div className="relative mt-4 flex items-center gap-2" data-testid="sidebar-search">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gm-text-muted)]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("searchPlaceholder2")}
+                  className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm text-white"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                  }}
+                  data-testid="sidebar-search-input"
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/10"
+                    aria-label="clear search"
+                    data-testid="sidebar-search-clear"
+                  >
+                    <X className="w-4 h-4 text-[var(--gm-text-muted)]" />
+                  </button>
+                )}
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="p-2.5 rounded-xl shrink-0 text-white"
+                    style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)", boxShadow: "0 6px 18px -6px rgba(59,158,255,0.55)" }}
+                    aria-label={t("newChat")}
+                    data-testid="sidebar-new-button"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  className="min-w-[160px]"
+                  style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  data-testid="sidebar-new-menu"
                 >
-                  <X className="w-4 h-4 text-[var(--gm-text-muted)]" />
-                </button>
-              )}
+                  <DropdownMenuItem
+                    onClick={() => { setQuery(""); requestAnimationFrame(() => document.querySelector('[data-testid="sidebar-search-input"]')?.focus()); }}
+                    data-testid="sidebar-action-new-chat"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" /> {t("newChat")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowNewGroup(true)} data-testid="sidebar-action-new-group">
+                    <Users className="w-4 h-4 mr-2" /> {t("newGroup")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* Either search results OR chat list */}
@@ -125,6 +162,7 @@ export default function Home() {
           </motion.main>
         </div>
       </div>
+      <NewGroupDialog open={showNewGroup} onOpenChange={setShowNewGroup} />
     </div>
   );
 }

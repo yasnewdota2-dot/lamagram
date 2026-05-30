@@ -534,6 +534,16 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  const toggleReaction = useCallback(async (messageId, emoji, convId) => {
+    const { data } = await api.post(`/messages/${messageId}/reactions`, { emoji });
+    if (convId) {
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) => (m.id === messageId ? { ...m, reactions: data.reactions } : m))
+      );
+    }
+    return data;
+  }, [patchMessagesForConv]);
+
   const setActiveConv = useCallback(async (convId) => {
     activeConvIdRef.current = convId;
     store.set({ activeConvId: convId });
@@ -666,6 +676,23 @@ export const MessengerProvider = ({ children }) => {
           ...s,
           messagesByConv: { ...s.messagesByConv, [conversation_id]: next },
         };
+      });
+      return;
+    }
+
+    if (data.type === "message_reaction") {
+      const { message_id, conversation_id, reactions } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        let changed = false;
+        const next = list.map((m) => {
+          if (m.id !== message_id) return m;
+          changed = true;
+          return { ...m, reactions };
+        });
+        if (!changed) return s;
+        return { ...s, messagesByConv: { ...s.messagesByConv, [conversation_id]: next } };
       });
       return;
     }
@@ -905,6 +932,7 @@ export const MessengerProvider = ({ children }) => {
       starMessage,
       unstarMessage,
       listStarred,
+      toggleReaction,
     }),
     [
       sendMessage,
@@ -938,6 +966,7 @@ export const MessengerProvider = ({ children }) => {
       starMessage,
       unstarMessage,
       listStarred,
+      toggleReaction,
     ]
   );
 
