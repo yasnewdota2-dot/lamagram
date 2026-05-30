@@ -1,0 +1,137 @@
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+
+const DICTIONARY = {
+  en: {
+    appName: "Glass Messenger",
+    tagline: "Conversations through glass.",
+    login: "Log in",
+    signup: "Sign up",
+    logout: "Log out",
+    username: "Username",
+    password: "Password",
+    displayName: "Display name",
+    bio: "Bio",
+    createAccount: "Create account",
+    haveAccount: "Already have an account?",
+    noAccount: "Don't have an account?",
+    welcomeBack: "Welcome back",
+    welcomeBackSub: "Sign in to continue your conversations.",
+    joinGlass: "Join Glass",
+    joinGlassSub: "Create your account in under a minute.",
+    usernameHint: "3-20 chars · lowercase, numbers, underscores",
+    passwordHint: "Minimum 6 characters",
+    chatsComingSoon: "Chats coming soon",
+    chatsComingSoonSub: "Your secure conversations will live here. We're polishing the experience.",
+    settings: "Settings",
+    profile: "Profile",
+    language: "Language",
+    english: "English",
+    persian: "Persian",
+    save: "Save changes",
+    saved: "Saved",
+    uploading: "Uploading…",
+    changeAvatar: "Change avatar",
+    removeAvatar: "Remove",
+    yourProfile: "Your profile",
+    online: "Online",
+    offline: "Offline",
+    memberSince: "Member since",
+    invalidCredentials: "Invalid username or password",
+    usernameTaken: "Username already taken",
+    requiredField: "This field is required",
+    loading: "Loading…",
+    cancel: "Cancel",
+    backToChats: "Back",
+    aboutYou: "About you",
+    aboutYouSub: "Tell others a little about yourself.",
+    appearance: "Appearance",
+    appearanceSub: "Choose how Glass looks and reads.",
+    dangerZone: "Account",
+    dangerZoneSub: "Manage session and sign out.",
+    chatsTitle: "Chats",
+    searchPlaceholder: "Search people, chats…",
+  },
+  fa: {
+    appName: "گلس مسنجر",
+    tagline: "گفتگو از پشت شیشه.",
+    login: "ورود",
+    signup: "ثبت‌نام",
+    logout: "خروج",
+    username: "نام کاربری",
+    password: "گذرواژه",
+    displayName: "نام نمایشی",
+    bio: "درباره من",
+    createAccount: "ساخت حساب",
+    haveAccount: "از قبل حساب دارید؟",
+    noAccount: "حساب ندارید؟",
+    welcomeBack: "خوش برگشتید",
+    welcomeBackSub: "برای ادامه گفتگوها وارد شوید.",
+    joinGlass: "به گلس بپیوندید",
+    joinGlassSub: "کمتر از یک دقیقه حساب بسازید.",
+    usernameHint: "۳ تا ۲۰ نویسه · حروف کوچک، اعداد، زیرخط",
+    passwordHint: "حداقل ۶ نویسه",
+    chatsComingSoon: "گفتگوها به‌زودی",
+    chatsComingSoonSub: "گفتگوهای امن شما به‌زودی اینجا ظاهر می‌شوند.",
+    settings: "تنظیمات",
+    profile: "نمایه",
+    language: "زبان",
+    english: "انگلیسی",
+    persian: "فارسی",
+    save: "ذخیره تغییرات",
+    saved: "ذخیره شد",
+    uploading: "در حال آپلود…",
+    changeAvatar: "تغییر آواتار",
+    removeAvatar: "حذف",
+    yourProfile: "نمایه شما",
+    online: "آنلاین",
+    offline: "آفلاین",
+    memberSince: "عضو از",
+    invalidCredentials: "نام کاربری یا گذرواژه اشتباه است",
+    usernameTaken: "این نام کاربری قبلاً گرفته شده",
+    requiredField: "این فیلد لازم است",
+    loading: "در حال بارگذاری…",
+    cancel: "انصراف",
+    backToChats: "بازگشت",
+    aboutYou: "درباره شما",
+    aboutYouSub: "کمی از خودتان بگویید.",
+    appearance: "ظاهر",
+    appearanceSub: "نحوه نمایش و خواندن گلس را انتخاب کنید.",
+    dangerZone: "حساب",
+    dangerZoneSub: "مدیریت نشست و خروج از حساب.",
+    chatsTitle: "گفتگوها",
+    searchPlaceholder: "جستجوی افراد و چت‌ها…",
+  },
+};
+
+const I18nContext = createContext({ t: (k) => k, lang: "en", setLang: () => {}, dir: "ltr" });
+
+export const I18nProvider = ({ children }) => {
+  const [lang, setLangState] = useState(() => localStorage.getItem("gm_lang") || "en");
+
+  const setLang = (newLang) => {
+    setLangState(newLang);
+    localStorage.setItem("gm_lang", newLang);
+  };
+
+  const dir = lang === "fa" ? "rtl" : "ltr";
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = dir;
+    document.body.dir = dir;
+  }, [lang, dir]);
+
+  const value = useMemo(
+    () => ({
+      lang,
+      dir,
+      setLang,
+      t: (key) => DICTIONARY[lang]?.[key] ?? DICTIONARY.en[key] ?? key,
+    }),
+    [lang, dir]
+  );
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+};
+
+export const useI18n = () => useContext(I18nContext);
