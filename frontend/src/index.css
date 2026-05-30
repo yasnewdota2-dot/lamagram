@@ -504,3 +504,24 @@ html, body { background: var(--bg-base) !important; color: var(--text-primary); 
 
 /* Selection */
 ::selection { background: var(--accent-glow); color: var(--text-primary); }
+
+/* Day separator chip (message list) */
+.gm-day-separator {
+  display: inline-block;
+  margin: 16px auto 8px;
+  padding: 4px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 999px;
+  background: var(--bg-glass);
+  color: var(--text-muted);
+  border: 1px solid var(--border-glass);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  letter-spacing: 0.02em;
+}
+.gm-day-separator-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}

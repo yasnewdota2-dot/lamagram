@@ -1,6 +1,6 @@
 import React, { memo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bookmark, Pin, BellOff, MoreHorizontal, PinOff, Bell, CheckCheck, Megaphone } from "lucide-react";
+import { Bookmark, Pin, BellOff, MoreHorizontal, PinOff, Bell, CheckCheck, Megaphone, MessageCircle } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -18,6 +18,7 @@ import {
 import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 import { listTime } from "../../lib/time";
+import { EmptyState } from "../EmptyState";
 
 export const SavedAvatar = ({ size = 44, testId }) => {
   return (
@@ -104,20 +105,19 @@ const ChatRow = memo(
         }}
         role="button"
         tabIndex={0}
-        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40"
-        style={
-          isActive
-            ? {
-                background: "rgba(59,158,255,0.10)",
-                border: "1px solid rgba(59,158,255,0.28)",
-              }
-            : {
-                background: "transparent",
-                border: "1px solid transparent",
-              }
-        }
+        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40 relative transition-colors hover:bg-[var(--bg-glass-strong)]"
+        style={{ background: "transparent", border: "1px solid transparent" }}
         data-testid={`chat-list-item-${testIdSlug}`}
+        data-active={isActive ? "true" : "false"}
       >
+        {isActive && (
+          <span
+            aria-hidden="true"
+            className="absolute top-2 bottom-2 left-0 w-[3px] rounded-full"
+            style={{ background: "var(--accent-gradient)", boxShadow: "0 0 12px var(--accent-glow)" }}
+            data-testid={`chat-list-active-bar-${testIdSlug}`}
+          />
+        )}
         <div className="relative shrink-0">
           {isSaved ? (
             <SavedAvatar size={44} testId="chat-list-saved-avatar" />
@@ -314,9 +314,11 @@ export const ChatList = () => {
 
   if (!conversations || conversations.length === 0) {
     return (
-      <div className="text-center text-xs text-[var(--gm-text-muted)] mt-6 px-4" data-testid="chat-list-empty">
-        {t("noConversations")}
-      </div>
+      <EmptyState
+        icon={MessageCircle}
+        title={t("noConversations")}
+        testId="chat-list-empty"
+      />
     );
   }
 

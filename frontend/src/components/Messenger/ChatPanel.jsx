@@ -24,7 +24,9 @@ import { GroupAvatar } from "./GroupAvatar";
 import { StarredView } from "./StarredView";
 import { ChatSearchBar } from "./ChatSearchBar";
 import { SavedAvatar } from "./ChatList";
-import { formatRelative, isWithinMinutes } from "../../lib/time";
+import { Hand, MessageCircle } from "lucide-react";
+import { EmptyState as EmptyChip } from "../EmptyState";
+import { formatRelative, isWithinMinutes, dayKey, relativeDayLabel } from "../../lib/time";
 
 export const EmptyState = () => {
   const { t } = useI18n();
@@ -376,40 +378,55 @@ export const ChatPanel = ({ conversation }) => {
           data-testid="messages-scroll"
         >
         {messages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-center" data-testid="empty-conversation">
-            <div className="max-w-xs">
-              <div className="text-5xl mb-3">👋</div>
-              <div className="text-white text-lg font-semibold">
-                {t("sayHi")} {other?.display_name || other?.username}
-              </div>
-              <div className="text-xs text-[var(--gm-text-muted)] mt-2">{t("sayHiSub")}</div>
-            </div>
-          </div>
+          <EmptyChip
+            icon={Hand}
+            title={`${t("sayHi")} ${other?.display_name || other?.username || ""}`.trim()}
+            subtitle={t("sayHiSub")}
+            testId="empty-conversation"
+          />
         ) : (
           messages.map((m, i) => {
             const mine = m.sender_id === user?.id;
             const prev = messages[i - 1];
-            const showAvatar =
-              !prev ||
-              prev.sender_id !== m.sender_id ||
-              !isWithinMinutes(prev.created_at, m.created_at, 2);
+            const sameSenderWithin2 =
+              !!prev &&
+              prev.sender_id === m.sender_id &&
+              isWithinMinutes(prev.created_at, m.created_at, 2);
+            const isFirstInGroup = !sameSenderWithin2;
+            const showAvatar = isFirstInGroup;
+            const dayChanged = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
+            const isAfterDaySeparator = dayChanged && !!prev;
+            // Spacing rules (per spec):
+            //  2px when same-sender within 2min, 12px when first-in-group, 24px when after day separator.
+            //  First message of the list: no extra margin.
+            let mt = 2;
+            if (!prev) mt = 0;
+            else if (isAfterDaySeparator) mt = 24;
+            else if (isFirstInGroup) mt = 12;
             return (
-              <div key={m.id} data-msgid={m.id}>
-                <MessageBubble
-                  message={m}
-                  mine={mine}
-                  showAvatar={showAvatar}
-                  conversation={conversation}
-                  groupMembers={groupMembers}
-                  onOpenImage={setLightboxSrc}
-                  onReply={handleReply}
-                  onForward={handleForward}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  onJumpToReply={handleJumpToReply}
-                  testId={`message-${m.id}`}
-                />
-              </div>
+              <React.Fragment key={m.id}>
+                {dayChanged && (
+                  <div className="gm-day-separator-wrap" data-testid={`day-separator-${dayKey(m.created_at)}`}>
+                    <div className="gm-day-separator">{relativeDayLabel(m.created_at, lang, t)}</div>
+                  </div>
+                )}
+                <div data-msgid={m.id} style={{ marginTop: mt }}>
+                  <MessageBubble
+                    message={m}
+                    mine={mine}
+                    showAvatar={showAvatar}
+                    conversation={conversation}
+                    groupMembers={groupMembers}
+                    onOpenImage={setLightboxSrc}
+                    onReply={handleReply}
+                    onForward={handleForward}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onJumpToReply={handleJumpToReply}
+                    testId={`message-${m.id}`}
+                  />
+                </div>
+              </React.Fragment>
             );
           })
         )}

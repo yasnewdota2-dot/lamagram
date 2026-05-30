@@ -4,6 +4,7 @@ import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useConversations } from "../../lib/messenger";
 import { useAuth } from "../../lib/auth";
 import { MessageBubble } from "./MessageBubble";
+import { EmptyState } from "../EmptyState";
 
 export const StarredView = ({ onJumpTo }) => {
   const { t } = useI18n();
@@ -34,11 +35,11 @@ export const StarredView = ({ onJumpTo }) => {
   }
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-white/55 py-16 gap-2" data-testid="starred-empty">
-        <Star className="w-10 h-10 opacity-50" />
-        <div className="text-sm">{t("noResults") /* fallback */}</div>
-        <div className="text-xs opacity-70">{t("starredMessages")}</div>
-      </div>
+      <EmptyState
+        icon={Star}
+        title={t("noStarredMessages")}
+        testId="starred-empty"
+      />
     );
   }
   return (

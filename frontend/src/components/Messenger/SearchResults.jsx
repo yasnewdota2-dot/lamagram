@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Search } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useConversations } from "../../lib/messenger";
 import { useAuth } from "../../lib/auth";
@@ -8,6 +9,7 @@ import { OnlineDot } from "./OnlineDot";
 import { GroupAvatar } from "./GroupAvatar";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative } from "../../lib/time";
+import { EmptyState } from "../EmptyState";
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -225,9 +227,11 @@ export const SearchResults = ({ query, onPick }) => {
           <div className="px-4 py-3 text-xs text-[var(--gm-text-muted)]">{t("loading")}</div>
         )}
         {!isLoading && !hasPeople && !hasMessages && (
-          <div className="px-4 py-3 text-xs text-[var(--gm-text-muted)]" data-testid="search-no-results">
-            {isAtSearch ? t("noUsersFound") : t("noResults")}
-          </div>
+          <EmptyState
+            icon={Search}
+            title={isAtSearch ? t("noUsersFound") : t("noSearchResults")}
+            testId="search-no-results"
+          />
         )}
       </motion.div>
     </AnimatePresence>

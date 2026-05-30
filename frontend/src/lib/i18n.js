@@ -198,6 +198,10 @@ const DICTIONARY = {
     goToHome: "Go to Home",
     back: "Back",
     inviteLinkExampleHint: "Example: https://yourapp/join/abc123…  or just abc123",
+    today: "Today",
+    yesterday: "Yesterday",
+    noStarredMessages: "No starred messages yet",
+    noSearchResults: "No results",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -396,6 +400,10 @@ const DICTIONARY = {
     goToHome: "بازگشت به خانه",
     back: "بازگشت",
     inviteLinkExampleHint: "نمونه: https://yourapp/join/abc123…  یا فقط abc123",
+    today: "امروز",
+    yesterday: "دیروز",
+    noStarredMessages: "هنوز پیام ستاره‌داری نیست",
+    noSearchResults: "نتیجه‌ای یافت نشد",
   },
 };
 

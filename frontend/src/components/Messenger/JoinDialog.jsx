@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Megaphone, Users as UsersIcon, Loader2, X, LinkIcon, Search } from "lucide-react";
+import { Megaphone, Users as UsersIcon, Loader2, X, LinkIcon, Search, Compass } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions } from "../../lib/messenger";
 import { api } from "../../lib/api";
 import { GroupAvatar } from "./GroupAvatar";
+import { EmptyState } from "../EmptyState";
 
 // Extract token from a pasted URL or raw string.
 const extractToken = (raw) => {
@@ -241,9 +242,11 @@ export const JoinDialog = ({ open, onOpenChange, onJoined }) => {
               </div>
               <div className="space-y-2" data-testid="discover-results-list">
                 {results.length === 0 && !loading && (
-                  <div className="text-center py-8 text-xs text-white/55" data-testid="discover-empty">
-                    {t("noPublicChatsFound")}
-                  </div>
+                  <EmptyState
+                    icon={Compass}
+                    title={t("noPublicChatsFound")}
+                    testId="discover-empty"
+                  />
                 )}
                 {results.map((r) => (
                   <ResultRow

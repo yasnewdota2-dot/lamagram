@@ -53,3 +53,34 @@ export function isWithinMinutes(isoA, isoB, minutes = 2) {
     return false;
   }
 }
+
+// Returns YYYY-MM-DD for day-bucket comparison
+export function dayKey(iso) {
+  try {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  } catch {
+    return "";
+  }
+}
+
+// Localized "Today" / "Yesterday" / weekday (within 7d) / full date (older)
+export function relativeDayLabel(iso, lang = "en", t) {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const diffDays = Math.round((startToday - target) / 86400000);
+    if (diffDays === 0) return t ? t("today") : (lang === "fa" ? "امروز" : "Today");
+    if (diffDays === 1) return t ? t("yesterday") : (lang === "fa" ? "دیروز" : "Yesterday");
+    if (diffDays > 1 && diffDays < 7) {
+      return d.toLocaleDateString(lang === "fa" ? "fa-IR" : "en-US", { weekday: "long" });
+    }
+    return d.toLocaleDateString(lang === "fa" ? "fa-IR" : "en-US", {
+      year: "numeric", month: "short", day: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
