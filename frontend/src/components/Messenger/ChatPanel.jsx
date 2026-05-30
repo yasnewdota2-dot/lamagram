@@ -26,6 +26,7 @@ import { ChatSearchBar } from "./ChatSearchBar";
 import { SavedAvatar } from "./ChatList";
 import { Hand, MessageCircle } from "lucide-react";
 import { EmptyState as EmptyChip } from "../EmptyState";
+import { useUserProfile } from "./UserProfileDrawer";
 import { formatRelative, isWithinMinutes, dayKey, relativeDayLabel } from "../../lib/time";
 
 export const EmptyState = () => {
@@ -64,6 +65,7 @@ export const ChatPanel = ({ conversation }) => {
   const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
   const { setActiveConv, loadGroupMembers } = useMessengerActions();
   const isMobile = useIsMobile();
+  const { openUserProfile } = useUserProfile();
   const convId = conversation?.id;
   const messages = useMessagesForConv(convId);
   const typingMap = useTypingForConv(convId);
@@ -235,7 +237,11 @@ export const ChatPanel = ({ conversation }) => {
         ) : isGroup ? (
           <GroupAvatar group={conversation.group} size={42} testId="chat-header-group-avatar" />
         ) : (
-          <div className="relative">
+          <div
+            className={!isGroup && !isChannel && other ? "relative cursor-pointer" : "relative"}
+            onClick={() => { if (!isGroup && !isChannel && other) openUserProfile(other); }}
+            data-testid={!isGroup && !isChannel && other ? "chat-header-avatar-trigger" : undefined}
+          >
             <UserAvatar user={other} size={42} testId="chat-header-avatar" />
             <span className="absolute -bottom-0.5 right-0">
               <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
@@ -253,9 +259,13 @@ export const ChatPanel = ({ conversation }) => {
           </button>
         )}
         <div
-          className={`min-w-0 flex-1 ${(isGroup || isChannel) ? "cursor-pointer" : ""}`}
-          onClick={() => { if (isGroup) setGroupInfoOpen(true); else if (isChannel) setChannelInfoOpen(true); }}
-          data-testid={isGroup ? "chat-header-group-title-trigger" : undefined}
+          className={`min-w-0 flex-1 ${(isGroup || isChannel || (!isSaved && other)) ? "cursor-pointer" : ""}`}
+          onClick={() => {
+            if (isGroup) setGroupInfoOpen(true);
+            else if (isChannel) setChannelInfoOpen(true);
+            else if (!isSaved && other) openUserProfile(other);
+          }}
+          data-testid={isGroup ? "chat-header-group-title-trigger" : (!isSaved && other ? "chat-header-dm-title-trigger" : undefined)}
         >
           <div className="text-white font-semibold truncate flex items-center gap-2" data-testid="chat-header-name">
             {isSaved ? t("savedMessages") : (isGroup || isChannel) ? (conversation.group?.title || (isChannel ? "Channel" : "Group")) : (other?.display_name || other?.username)}

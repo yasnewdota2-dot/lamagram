@@ -10,6 +10,7 @@ import { GroupAvatar } from "./GroupAvatar";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative } from "../../lib/time";
 import { EmptyState } from "../EmptyState";
+import { useUserProfile } from "./UserProfileDrawer";
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -36,6 +37,7 @@ export const SearchResults = ({ query, onPick }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
   const { searchUsers, searchMessagesGlobal, setActiveConv } = useMessengerActions();
+  const { openUserProfile } = useUserProfile();
   const conversations = useConversations();
   const [people, setPeople] = useState([]);
   const [messageResults, setMessageResults] = useState([]);
@@ -156,7 +158,7 @@ export const SearchResults = ({ query, onPick }) => {
             {people.map((u) => (
               <button
                 key={u.id}
-                onClick={() => onPick(u)}
+                onClick={() => openUserProfile(u)}
                 className="w-full text-left flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.06] transition-colors"
                 data-testid={`search-result-${u.username}`}
               >

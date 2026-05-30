@@ -538,6 +538,26 @@ html, body { background: var(--bg-base) !important; color: var(--text-primary); 
   width: 100%;
 }
 
+/* Phase 8B-finish: inline mention chip */
+.gm-mention {
+  cursor: pointer;
+  color: var(--accent-blue, #3B9EFF);
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 0 2px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.gm-mention:hover {
+  text-decoration: underline;
+  background: rgba(59,158,255,0.10);
+}
+:root[data-theme="light"] .gm-mention {
+  color: #1E5BD6;
+}
+:root[data-theme="light"] .gm-mention:hover {
+  background: rgba(30,91,214,0.10);
+}
+
 /* ===========================================================
  * Phase 8A Bug 2 — extra light-mode contrast fixes
  * Targets hardcoded text/background colors not caught by

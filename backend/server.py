@@ -249,7 +249,10 @@ async def login(body: LoginRequest):
 
 @api_router.get("/auth/me")
 async def me(current_user: dict = Depends(get_current_user)):
-    return public_user(current_user)
+    pu = public_user(current_user)
+    # Self-view: include own blocked list so the client can render block toggles.
+    pu["blocked_users"] = list(current_user.get("blocked_users") or [])
+    return pu
 
 @api_router.post("/auth/logout")
 async def logout(current_user: dict = Depends(get_current_user)):

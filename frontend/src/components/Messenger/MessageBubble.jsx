@@ -25,6 +25,12 @@ import { QuickReactionRow, ReactionChips } from "./Reactions";
 import { formatTime } from "../../lib/time";
 import { isEmojiOnly } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
+import { useLongPress } from "../../lib/useLongPress";
+import { parseMentions } from "../../lib/parseMentions";
+import { useUserProfile } from "./UserProfileDrawer";
+import { useMessengerActions } from "../../lib/messenger";
+import { api } from "../../lib/api";
+import { toast } from "sonner";
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const DELETE_ALL_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -95,6 +101,52 @@ const MessageBubbleImpl = ({
 }) => {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { openUserProfile } = useUserProfile();
+  const { setActiveConv, openOrCreateConversation } = useMessengerActions();
+  const lp = useLongPress(() => setMenuOpen(true), { threshold: 500 });
+
+  const handleMentionClick = async (seg) => {
+    try {
+      if (seg.type === "user") {
+        const { data } = await api.get(`/users/by-username/${seg.name}`);
+        openUserProfile(data);
+      } else {
+        const { data } = await api.get(`/conversations/by-handle/${seg.name}`);
+        // Already a member: just activate. Else: join then activate.
+        try {
+          if (data?.id) setActiveConv(data.id);
+        } catch {}
+      }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 404) {
+        const tpl = seg.type === "user" ? (t("userNotFound") || "User @{username} not found") : (t("channelNotFound") || "Channel @{handle} not found");
+        toast.error(tpl.replace(seg.type === "user" ? "{username}" : "{handle}", seg.name));
+      } else if (status === 403 && seg.type === "conv") {
+        // Private channel/group — try to join via openOrCreate by handle (no public flow yet)
+        toast.error(t("channelNotFound").replace("{handle}", seg.name));
+      } else {
+        toast.error(e?.response?.data?.detail || e.message || "Failed");
+      }
+    }
+  };
+
+  const renderTextWithMentions = (text) => {
+    const segs = parseMentions(text);
+    return segs.map((seg, i) => {
+      if (typeof seg === "string") return <React.Fragment key={i}>{seg}</React.Fragment>;
+      return (
+        <span
+          key={i}
+          className="gm-mention"
+          onClick={(e) => { e.stopPropagation(); handleMentionClick(seg); }}
+          data-testid={`mention-${seg.type}-${seg.name}`}
+        >
+          {seg.raw}
+        </span>
+      );
+    });
+  };
 
   if (message.deleted_for_everyone) {
     return (
@@ -135,27 +187,36 @@ const MessageBubbleImpl = ({
       data-testid={testId || `message-${message.id}`}
     >
       <div
+        {...lp}
         className={`max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"}`}
         style={
           emojiOnly
-            ? { background: "transparent" }
+            ? { background: "transparent", WebkitTouchCallout: "none" }
             : mine
             ? {
                 background: "var(--bubble-mine-bg)",
                 boxShadow: "0 10px 30px -12px var(--accent-glow)",
                 color: "var(--bubble-mine-text)",
+                WebkitTouchCallout: "none",
               }
             : {
                 background: "var(--bubble-theirs-bg)",
                 border: "1px solid var(--border-glass)",
                 color: "var(--bubble-theirs-text)",
+                WebkitTouchCallout: "none",
               }
         }
       >
         {conversation?.kind === "group" && !mine && showAvatar && (
           <div
-            className="text-[11px] font-semibold mb-1"
+            className="text-[11px] font-semibold mb-1 cursor-pointer hover:underline"
             style={{ color: senderColor(message.sender_id) }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const m = groupMembers?.[message.sender_id];
+              if (m) openUserProfile(m);
+              else openUserProfile({ id: message.sender_id });
+            }}
             data-testid="group-sender-label"
           >
             {groupMembers?.[message.sender_id]?.display_name ||
@@ -184,7 +245,7 @@ const MessageBubbleImpl = ({
             style={{ unicodeBidi: "plaintext" }}
             data-testid="message-text"
           >
-            {message.text}
+            {emojiOnly ? message.text : renderTextWithMentions(message.text)}
           </div>
         )}
         <ReactionChips message={message} convId={message.conversation_id} />
