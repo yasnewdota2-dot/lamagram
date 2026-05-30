@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import { ThemeProvider } from "./lib/theme";
 import { JoinByTokenPage, JoinByHandlePage } from "./pages/DeepLink";
 
 const Loader = () => (
@@ -30,7 +31,7 @@ function App() {
     <I18nProvider>
       <AuthProvider>
         <div className="App">
-          <BrowserRouter>
+          <ThemeProvider><BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
@@ -54,7 +55,7 @@ function App() {
               />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </BrowserRouter>
+          </BrowserRouter></ThemeProvider>
         </div>
       </AuthProvider>
     </I18nProvider>

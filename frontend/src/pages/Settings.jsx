@@ -1,7 +1,8 @@
 import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Camera, Check, LogOut, Languages, Pencil, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, LogOut, Languages, Pencil, X, Moon, Sun } from "lucide-react";
+import { useTheme } from "../lib/theme";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { api, formatApiError } from "../lib/api";
@@ -12,6 +13,7 @@ const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const { t, lang, setLang, dir } = useI18n();
   const navigate = useNavigate();
   const fileRef = useRef(null);
