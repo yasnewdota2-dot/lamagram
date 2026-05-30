@@ -552,8 +552,12 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
     other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
+    is_saved = conv.get("kind") == "saved"
     now = datetime.now(timezone.utc).isoformat()
-    initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+    if is_saved:
+        initial_status = "seen"
+    else:
+        initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
     msg = {
         "_id": str(uuid.uuid4()),
         "conversation_id": conv_id,
@@ -562,8 +566,8 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         "text": body.text,
         "status": initial_status,
         "created_at": now,
-        "seen_at": None,
-        "delivered_at": now if initial_status == "delivered" else None,
+        "seen_at": now if is_saved else None,
+        "delivered_at": now if initial_status in ("delivered", "seen") else None,
         "deleted": False,
     }
     await db.messages.insert_one(msg)
@@ -1004,6 +1008,22 @@ async def on_startup():
             created += 1
     if created:
         logger.info(f"Migration: created {created} Saved Messages conversations")
+
+    # Migration: ensure existing Saved Messages messages have status="seen"
+    saved_conv_ids = [
+        c["_id"] async for c in db.conversations.find({"kind": "saved"}, {"_id": 1})
+    ]
+    if saved_conv_ids:
+        migration_now = datetime.now(timezone.utc).isoformat()
+        res = await db.messages.update_many(
+            {
+                "conversation_id": {"$in": saved_conv_ids},
+                "status": {"$ne": "seen"},
+            },
+            {"$set": {"status": "seen", "seen_at": migration_now, "delivered_at": migration_now}},
+        )
+        if res.modified_count:
+            logger.info(f"Migration: marked {res.modified_count} saved-message rows as seen")
 
 @app.on_event("shutdown")
 async def on_shutdown():

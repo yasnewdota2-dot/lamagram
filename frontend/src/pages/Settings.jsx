@@ -18,6 +18,7 @@ export default function Settings() {
   const [bio, setBio] = useState(user?.bio || "");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [usernameCopiedAt, setUsernameCopiedAt] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
@@ -129,11 +130,41 @@ export default function Settings() {
                 <span>@{user?.username}</span>
                 <button
                   onClick={async () => {
+                    const text = `@${user?.username}`;
+                    let ok = false;
                     try {
-                      await navigator.clipboard.writeText(`@${user?.username}`);
-                      setSavedAt(Date.now());
+                      if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(text);
+                        ok = true;
+                      }
+                    } catch {
+                      ok = false;
+                    }
+                    if (!ok) {
+                      try {
+                        const ta = document.createElement("textarea");
+                        ta.value = text;
+                        ta.setAttribute("readonly", "");
+                        ta.style.position = "fixed";
+                        ta.style.top = "0";
+                        ta.style.left = "0";
+                        ta.style.width = "1px";
+                        ta.style.height = "1px";
+                        ta.style.opacity = "0";
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        ta.setSelectionRange(0, text.length);
+                        ok = document.execCommand("copy");
+                        document.body.removeChild(ta);
+                      } catch {
+                        ok = false;
+                      }
+                    }
+                    if (ok) {
+                      setUsernameCopiedAt(Date.now());
                       setError("");
-                    } catch (e) {
+                    } else {
                       setError("Copy failed");
                     }
                   }}
@@ -144,6 +175,15 @@ export default function Settings() {
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 </button>
+                {usernameCopiedAt && (
+                  <span
+                    className="text-[10px] text-[#9ABEFF] px-1.5 py-0.5 rounded-md"
+                    style={{ background: "rgba(59,158,255,0.10)", border: "1px solid rgba(59,158,255,0.28)" }}
+                    data-testid="username-copied-indicator"
+                  >
+                    {t("usernameCopied")}
+                  </span>
+                )}
               </div>
               {uploading && (
                 <div className="text-xs text-[#9ABEFF] mt-2" data-testid="avatar-uploading">{t("uploading")}</div>
