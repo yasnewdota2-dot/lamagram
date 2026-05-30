@@ -1,7 +1,7 @@
-import React from "react";
+import React, { memo } from "react";
 import { resolveAsset } from "../lib/api";
 
-export const UserAvatar = ({ user, size = 40, ring = false, className = "", testId }) => {
+const UserAvatarImpl = ({ user, size = 40, ring = false, className = "", testId }) => {
   const url = user?.avatar_url ? resolveAsset(user.avatar_url) : null;
   const initials = (user?.display_name || user?.username || "?")
     .split(" ")
@@ -22,7 +22,13 @@ export const UserAvatar = ({ user, size = 40, ring = false, className = "", test
       data-testid={testId || "user-avatar"}
     >
       {url ? (
-        <img src={url} alt={user?.display_name || user?.username || "avatar"} className="w-full h-full object-cover" />
+        <img
+          src={url}
+          alt={user?.display_name || user?.username || "avatar"}
+          className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
       ) : (
         <span>{initials}</span>
       )}
@@ -36,3 +42,21 @@ export const UserAvatar = ({ user, size = 40, ring = false, className = "", test
     </div>
   );
 };
+
+const areEqual = (prev, next) => {
+  if (prev.size !== next.size) return false;
+  if (prev.ring !== next.ring) return false;
+  if (prev.className !== next.className) return false;
+  if (prev.testId !== next.testId) return false;
+  const a = prev.user, b = next.user;
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.username === b.username &&
+    a.display_name === b.display_name &&
+    a.avatar_url === b.avatar_url
+  );
+};
+
+export const UserAvatar = memo(UserAvatarImpl, areEqual);

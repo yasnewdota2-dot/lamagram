@@ -1,22 +1,29 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { SendHorizonal, Paperclip, Smile, Mic } from "lucide-react";
-import EmojiPicker, { Theme } from "emoji-picker-react";
 import { useI18n } from "../../lib/i18n";
-import { useMessenger } from "../../lib/messenger";
+import { useMessengerActions } from "../../lib/messenger";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { detectKind } from "../../lib/format";
+
+const EmojiPickerLazy = lazy(() =>
+  import("emoji-picker-react").then((m) => ({ default: m.default }))
+);
+// emoji-picker-react v4 exposes Theme enum on the module too; we
+// reproduce the dark value to avoid pulling the whole module eagerly.
+const EMOJI_DARK_THEME = "dark";
 
 const MAX_BYTES = 100 * 1024 * 1024;
 
 export const Composer = ({ conversationId, onUploadError }) => {
   const { t, lang } = useI18n();
-  const { sendMessage, sendTyping, uploadMedia } = useMessenger();
+  const { sendMessage, sendTyping, uploadMedia } = useMessengerActions();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [recording, setRecording] = useState(false);
   const isTypingRef = useRef(false);
   const typingTimerRef = useRef(null);
+  const sendLockRef = useRef(false);
   const taRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -25,10 +32,11 @@ export const Composer = ({ conversationId, onUploadError }) => {
     setShowEmoji(false);
     setRecording(false);
     isTypingRef.current = false;
+    sendLockRef.current = false;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
   }, [conversationId]);
 
-  const ping = (next) => {
+  const ping = useCallback((next) => {
     if (next && !isTypingRef.current) {
       isTypingRef.current = true;
       sendTyping(conversationId, true);
@@ -37,45 +45,56 @@ export const Composer = ({ conversationId, onUploadError }) => {
       isTypingRef.current = false;
       sendTyping(conversationId, false);
     }
-  };
+  }, [conversationId, sendTyping]);
 
-  const onChange = (e) => {
+  const onChange = useCallback((e) => {
     const v = e.target.value;
     setText(v);
     if (v.trim().length === 0) {
       ping(false);
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
       return;
     }
     ping(true);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => ping(false), 2000);
-  };
+    typingTimerRef.current = setTimeout(() => ping(false), 1500);
+  }, [ping]);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || sendLockRef.current) return;
+    sendLockRef.current = true;
     setSending(true);
+    // Clear input immediately so user can keep typing while the network
+    // request is in flight. The optimistic message is already in the store.
+    setText("");
+    ping(false);
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
     try {
       await sendMessage(conversationId, trimmed);
-      setText("");
-      ping(false);
-      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-      if (taRef.current) taRef.current.focus();
     } catch {
-      /* swallow */
+      /* swallow — optimistic message will be marked failed by sendMessage */
     } finally {
       setSending(false);
+      sendLockRef.current = false;
+      if (taRef.current) taRef.current.focus();
     }
-  };
+  }, [text, sending, conversationId, ping, sendMessage]);
 
-  const onKeyDown = (e) => {
+  const onKeyDown = useCallback((e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      submit();
+      if (!sendLockRef.current) submit();
     }
-  };
+  }, [submit]);
 
-  const handleFile = async (file, opts = {}) => {
+  const handleFile = useCallback(async (file, opts = {}) => {
     if (!file) return;
     if (file.size > MAX_BYTES) {
       onUploadError?.(t("fileTooLarge"));
@@ -86,15 +105,15 @@ export const Composer = ({ conversationId, onUploadError }) => {
     } catch (e) {
       onUploadError?.(e?.response?.data?.detail || t("uploadFailed"));
     }
-  };
+  }, [conversationId, uploadMedia, onUploadError, t]);
 
-  const onFileInput = async (e) => {
+  const onFileInput = useCallback(async (e) => {
     const f = e.target.files?.[0];
     if (f) await handleFile(f, { kind: detectKind(f) });
     if (fileRef.current) fileRef.current.value = "";
-  };
+  }, [handleFile]);
 
-  const insertEmoji = (emoji) => {
+  const insertEmoji = useCallback((emoji) => {
     const ta = taRef.current;
     if (!ta) {
       setText((p) => p + emoji);
@@ -109,7 +128,7 @@ export const Composer = ({ conversationId, onUploadError }) => {
       const pos = start + emoji.length;
       ta.setSelectionRange(pos, pos);
     });
-  };
+  }, [text]);
 
   if (recording) {
     return (
@@ -141,17 +160,28 @@ export const Composer = ({ conversationId, onUploadError }) => {
           onMouseLeave={() => setShowEmoji(false)}
           data-testid="emoji-picker-popover"
         >
-          <EmojiPicker
-            theme={Theme.DARK}
-            onEmojiClick={(d) => {
-              insertEmoji(d.emoji);
-            }}
-            searchPlaceHolder={t("searchEmoji")}
-            lazyLoadEmojis
-            width={320}
-            height={380}
-            previewConfig={{ showPreview: false }}
-          />
+          <Suspense
+            fallback={
+              <div
+                className="rounded-2xl px-4 py-3 text-xs text-white/60"
+                style={{ width: 320, background: "rgba(11,11,18,0.85)", border: "1px solid rgba(255,255,255,0.1)" }}
+              >
+                {t("loading")}
+              </div>
+            }
+          >
+            <EmojiPickerLazy
+              theme={EMOJI_DARK_THEME}
+              onEmojiClick={(d) => {
+                insertEmoji(d.emoji);
+              }}
+              searchPlaceHolder={t("searchEmoji")}
+              lazyLoadEmojis
+              width={320}
+              height={380}
+              previewConfig={{ showPreview: false }}
+            />
+          </Suspense>
         </div>
       )}
       <div

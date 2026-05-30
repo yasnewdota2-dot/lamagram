@@ -1,9 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowDown, Upload, MessageSquareText } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
-import { useMessenger } from "../../lib/messenger";
+import {
+  useMessengerActions,
+  useMessagesForConv,
+  useTypingForConv,
+  usePresenceForUser,
+} from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 import { TypingDots } from "./TypingDots";
@@ -45,7 +50,12 @@ export const EmptyState = () => {
 export const ChatPanel = ({ conversation }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const { messagesByConv, typingByConv, presence, uploadMedia } = useMessenger();
+  const { uploadMedia } = useMessengerActions();
+  const convId = conversation?.id;
+  const messages = useMessagesForConv(convId);
+  const typingMap = useTypingForConv(convId);
+  const other = conversation?.other_user;
+  const livePres = usePresenceForUser(other?.id);
   const scrollRef = useRef(null);
   const prevLenRef = useRef(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -54,18 +64,8 @@ export const ChatPanel = ({ conversation }) => {
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState("");
 
-  const convId = conversation?.id;
-  const messages = useMemo(
-    () => (convId ? messagesByConv[convId] || [] : []),
-    [convId, messagesByConv]
-  );
-
-  const other = conversation?.other_user;
-  const livePres = other ? presence[other.id] : null;
   const isOnline = livePres ? livePres.is_online : !!other?.is_online;
   const lastSeen = livePres?.last_seen || other?.last_seen;
-
-  const typingMap = (convId && typingByConv[convId]) || {};
   const otherTyping = !!(other && typingMap[other.id]);
 
   const scrollToBottom = (smooth = false) => {
@@ -95,6 +95,7 @@ export const ChatPanel = ({ conversation }) => {
     } else {
       setPendingNew((n) => n + added);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, autoScroll, user?.id]);
 
   const onScroll = () => {

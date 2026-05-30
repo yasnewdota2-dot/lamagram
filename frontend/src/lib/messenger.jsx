@@ -3,28 +3,88 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
-  useState,
+  useSyncExternalStore,
 } from "react";
 import { api, API_BASE, TOKEN_KEY } from "./api";
 import { useAuth } from "./auth";
 
-const MessengerContext = createContext(null);
+/* -------------------------------------------------------------------------
+ * External subscription store
+ *
+ * Why: a single React Context value re-renders every consumer on every state
+ * change ("fan-out"). With WebSocket presence/typing events arriving at high
+ * frequency, that crushed render perf. The store below holds the
+ * conversations/messages/typing/presence/activeConvId fields outside React.
+ * Components subscribe to ONLY the slice they need via useSyncExternalStore.
+ * Actions (sendMessage, etc.) are stable refs returned from MessengerProvider.
+ * ------------------------------------------------------------------------- */
+
+const EMPTY_ARRAY = Object.freeze([]);
+const EMPTY_OBJECT = Object.freeze({});
+
+const initialState = {
+  conversations: [],
+  messagesByConv: {},
+  typingByConv: {},
+  presence: {},
+  activeConvId: null,
+  wsConnected: false,
+};
+
+const createStore = (initial) => {
+  let state = initial;
+  const listeners = new Set();
+  return {
+    get: () => state,
+    set: (patch) => {
+      const next = typeof patch === "function" ? patch(state) : { ...state, ...patch };
+      if (next === state) return;
+      state = next;
+      listeners.forEach((l) => l());
+    },
+    subscribe: (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+  };
+};
+
+const store = createStore(initialState);
+
+const useStoreSlice = (selector) =>
+  useSyncExternalStore(store.subscribe, () => selector(store.get()));
+
+/* ---- Public selector hooks (one slice each → no fan-out) ---- */
+export const useConversations = () =>
+  useStoreSlice((s) => s.conversations);
+
+export const useActiveConvId = () =>
+  useStoreSlice((s) => s.activeConvId);
+
+export const useMessagesForConv = (convId) =>
+  useStoreSlice((s) => (convId ? s.messagesByConv[convId] || EMPTY_ARRAY : EMPTY_ARRAY));
+
+export const useTypingForConv = (convId) =>
+  useStoreSlice((s) => (convId ? s.typingByConv[convId] || EMPTY_OBJECT : EMPTY_OBJECT));
+
+export const usePresenceForUser = (userId) =>
+  useStoreSlice((s) => (userId ? s.presence[userId] || null : null));
+
+export const useWsConnected = () =>
+  useStoreSlice((s) => s.wsConnected);
+
+/* ---- Actions context (stable callbacks) ---- */
+const ActionsContext = createContext(null);
 
 const wsUrlFromApi = () => {
-  // API_BASE is `${REACT_APP_BACKEND_URL}/api`
   const root = API_BASE.replace(/\/api$/, "");
   return root.replace(/^http/i, "ws") + "/api/ws";
 };
 
 export const MessengerProvider = ({ children }) => {
   const { user } = useAuth();
-  const [conversations, setConversations] = useState([]);
-  const [messagesByConv, setMessagesByConv] = useState({});
-  const [typingByConv, setTypingByConv] = useState({});
-  const [presence, setPresence] = useState({});
-  const [activeConvId, setActiveConvId] = useState(null);
-  const [wsConnected, setWsConnected] = useState(false);
 
   const wsRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
@@ -34,12 +94,21 @@ export const MessengerProvider = ({ children }) => {
   const userIdRef = useRef(null);
 
   useEffect(() => {
-    activeConvIdRef.current = activeConvId;
-  }, [activeConvId]);
-
-  useEffect(() => {
     userIdRef.current = user?.id || null;
   }, [user]);
+
+  /* --- Internal store helpers --- */
+  const patchMessagesForConv = useCallback((convId, updater) => {
+    store.set((s) => {
+      const list = s.messagesByConv[convId] || EMPTY_ARRAY;
+      const next = updater(list);
+      if (next === list) return s;
+      return {
+        ...s,
+        messagesByConv: { ...s.messagesByConv, [convId]: next },
+      };
+    });
+  }, []);
 
   const sendWS = useCallback((payload) => {
     try {
@@ -51,22 +120,61 @@ export const MessengerProvider = ({ children }) => {
     }
   }, []);
 
+  /* --- Actions --- */
   const fetchConversations = useCallback(async () => {
     const { data } = await api.get("/conversations");
-    setConversations(data);
+    store.set({ conversations: data });
     return data;
   }, []);
 
   const loadMessages = useCallback(async (convId) => {
     const { data } = await api.get(`/conversations/${convId}/messages`);
-    setMessagesByConv((prev) => ({ ...prev, [convId]: data }));
+    store.set((s) => ({
+      ...s,
+      messagesByConv: { ...s.messagesByConv, [convId]: data },
+    }));
     return data;
   }, []);
 
   const sendMessage = useCallback(async (convId, text) => {
-    const { data } = await api.post(`/conversations/${convId}/messages`, { text });
-    return data;
-  }, []);
+    const trimmed = (text || "").trim();
+    if (!trimmed) return null;
+    // Optimistic insert
+    const tmpId = `tmp-${Math.random().toString(36).slice(2, 10)}`;
+    const nowIso = new Date().toISOString();
+    const tmp = {
+      id: tmpId,
+      conversation_id: convId,
+      sender_id: userIdRef.current,
+      type: "text",
+      text: trimmed,
+      media: null,
+      status: "pending",
+      created_at: nowIso,
+      seen_at: null,
+      delivered_at: null,
+      _temp: true,
+    };
+    patchMessagesForConv(convId, (list) => [...list, tmp]);
+    try {
+      const { data: real } = await api.post(`/conversations/${convId}/messages`, { text: trimmed });
+      patchMessagesForConv(convId, (list) => {
+        const withoutTmp = list.filter((m) => m.id !== tmpId);
+        if (withoutTmp.some((m) => m.id === real.id)) return withoutTmp;
+        return [...withoutTmp, real];
+      });
+      return real;
+    } catch (err) {
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) =>
+          m.id === tmpId
+            ? { ...m, status: "failed", _error: err?.response?.data?.detail || err.message }
+            : m
+        )
+      );
+      throw err;
+    }
+  }, [patchMessagesForConv]);
 
   const uploadMedia = useCallback(async (convId, file, opts = {}) => {
     const kind = opts.kind || (() => {
@@ -98,10 +206,7 @@ export const MessengerProvider = ({ children }) => {
       _progress: 0,
       _localUrl: tmpUrl,
     };
-    setMessagesByConv((prev) => ({
-      ...prev,
-      [convId]: [...(prev[convId] || []), tmpMsg],
-    }));
+    patchMessagesForConv(convId, (list) => [...list, tmpMsg]);
 
     const form = new FormData();
     form.append("conversation_id", convId);
@@ -120,47 +225,39 @@ export const MessengerProvider = ({ children }) => {
         onUploadProgress: (e) => {
           if (!e.total) return;
           const p = e.loaded / e.total;
-          setMessagesByConv((prev) => {
-            const arr = prev[convId];
-            if (!arr) return prev;
-            return {
-              ...prev,
-              [convId]: arr.map((m) => (m.id === tmpId ? { ...m, _progress: p } : m)),
-            };
-          });
+          patchMessagesForConv(convId, (list) =>
+            list.map((m) => (m.id === tmpId ? { ...m, _progress: p } : m))
+          );
         },
       });
-      setMessagesByConv((prev) => {
-        const arr = prev[convId] || [];
-        const withoutTmp = arr.filter((m) => m.id !== tmpId);
-        if (withoutTmp.some((m) => m.id === real.id)) {
-          return { ...prev, [convId]: withoutTmp };
-        }
-        return { ...prev, [convId]: [...withoutTmp, real] };
+      patchMessagesForConv(convId, (list) => {
+        const withoutTmp = list.filter((m) => m.id !== tmpId);
+        if (withoutTmp.some((m) => m.id === real.id)) return withoutTmp;
+        return [...withoutTmp, real];
       });
       try { URL.revokeObjectURL(tmpUrl); } catch { /* ignore */ }
       return real;
     } catch (err) {
-      setMessagesByConv((prev) => {
-        const arr = prev[convId];
-        if (!arr) return prev;
-        return {
-          ...prev,
-          [convId]: arr.map((m) =>
-            m.id === tmpId ? { ...m, status: "failed", _error: err?.response?.data?.detail || err.message } : m
-          ),
-        };
-      });
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) =>
+          m.id === tmpId
+            ? { ...m, status: "failed", _error: err?.response?.data?.detail || err.message }
+            : m
+        )
+      );
       throw err;
     }
-  }, []);
+  }, [patchMessagesForConv]);
 
   const markRead = useCallback(async (convId) => {
     try {
       await api.post(`/conversations/${convId}/read`);
-      setConversations((cs) =>
-        cs.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
-      );
+      store.set((s) => ({
+        ...s,
+        conversations: s.conversations.map((c) =>
+          c.id === convId ? { ...c, unread_count: 0 } : c
+        ),
+      }));
     } catch {
       // ignore
     }
@@ -168,13 +265,17 @@ export const MessengerProvider = ({ children }) => {
 
   const openOrCreateConversation = useCallback(async (otherUserId) => {
     const { data } = await api.post("/conversations", { user_id: otherUserId });
-    setConversations((cs) => {
-      const exists = cs.find((c) => c.id === data.id);
-      if (exists) return cs.map((c) => (c.id === data.id ? { ...c, ...data } : c));
-      // Insert after saved (if any)
-      const savedIdx = cs.findIndex((c) => c.kind === "saved");
-      if (savedIdx === 0) return [cs[0], data, ...cs.slice(1)];
-      return [data, ...cs];
+    store.set((s) => {
+      const exists = s.conversations.find((c) => c.id === data.id);
+      let next;
+      if (exists) {
+        next = s.conversations.map((c) => (c.id === data.id ? { ...c, ...data } : c));
+      } else {
+        const cs = s.conversations;
+        const savedIdx = cs.findIndex((c) => c.kind === "saved");
+        next = savedIdx === 0 ? [cs[0], data, ...cs.slice(1)] : [data, ...cs];
+      }
+      return { ...s, conversations: next };
     });
     return data;
   }, []);
@@ -182,10 +283,13 @@ export const MessengerProvider = ({ children }) => {
   const ensureSavedConversation = useCallback(async () => {
     try {
       const { data } = await api.post("/conversations/saved");
-      setConversations((cs) => {
-        const exists = cs.find((c) => c.id === data.id);
-        if (exists) return cs;
-        return [data, ...cs.filter((c) => c.kind !== "saved")];
+      store.set((s) => {
+        const exists = s.conversations.find((c) => c.id === data.id);
+        if (exists) return s;
+        return {
+          ...s,
+          conversations: [data, ...s.conversations.filter((c) => c.kind !== "saved")],
+        };
       });
       return data;
     } catch {
@@ -199,21 +303,20 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
-  const setActiveConv = useCallback(
-    async (convId) => {
-      setActiveConvId(convId);
-      if (!convId) return;
-      if (!messagesByConv[convId]) {
-        try {
-          await loadMessages(convId);
-        } catch {
-          // ignore
-        }
+  const setActiveConv = useCallback(async (convId) => {
+    activeConvIdRef.current = convId;
+    store.set({ activeConvId: convId });
+    if (!convId) return;
+    const existing = store.get().messagesByConv[convId];
+    if (!existing) {
+      try {
+        await loadMessages(convId);
+      } catch {
+        // ignore
       }
-      markRead(convId);
-    },
-    [messagesByConv, loadMessages, markRead]
-  );
+    }
+    markRead(convId);
+  }, [loadMessages, markRead]);
 
   const sendTyping = useCallback(
     (convId, isTyping) => {
@@ -222,131 +325,161 @@ export const MessengerProvider = ({ children }) => {
     [sendWS]
   );
 
-  // ------- WebSocket lifecycle -------
-  const handleWsMessage = useCallback(
-    (event) => {
-      let data;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      const meId = userIdRef.current;
-      const activeId = activeConvIdRef.current;
+  /* --- WebSocket handler --- */
+  const handleWsMessage = useCallback((event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    const meId = userIdRef.current;
+    const activeId = activeConvIdRef.current;
 
-      if (data.type === "ready") {
-        return;
-      }
-      if (data.type === "pong") {
-        return;
-      }
-      if (data.type === "message_new") {
-        const { message, conversation_id } = data;
-        setMessagesByConv((prev) => {
-          const list = prev[conversation_id] || [];
-          if (list.some((m) => m.id === message.id)) return prev;
-          return { ...prev, [conversation_id]: [...list, message] };
-        });
-        setConversations((cs) => {
-          const found = cs.find((c) => c.id === conversation_id);
-          const lastMsg = {
-            text: message.text || "",
-            sender_id: message.sender_id,
-            created_at: message.created_at,
-            type: message.type || "text",
-            media_label_key: message.type && message.type !== "text" ? message.type : undefined,
-            file_name: message.media?.file_name,
-            duration_sec: message.media?.duration_sec,
-          };
-          let next;
-          if (found) {
-            const updated = {
-              ...found,
-              last_message: lastMsg,
-              last_message_at: message.created_at,
-            };
-            if (message.sender_id !== meId && conversation_id !== activeId) {
-              updated.unread_count = (found.unread_count || 0) + 1;
-            }
-            // Keep Saved Messages pinned at top
-            const others = cs.filter((c) => c.id !== conversation_id);
-            if (updated.kind === "saved") {
-              next = [updated, ...others.filter((c) => c.kind !== "saved")];
-            } else {
-              const savedIdx = others.findIndex((c) => c.kind === "saved");
-              if (savedIdx >= 0) {
-                const savedConv = others[savedIdx];
-                const rest = others.filter((c) => c.id !== savedConv.id);
-                next = [savedConv, updated, ...rest];
-              } else {
-                next = [updated, ...others];
-              }
-            }
+    if (data.type === "ready" || data.type === "pong") return;
+
+    if (data.type === "message_new") {
+      const { message, conversation_id } = data;
+      let needFetchConvs = false;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id] || EMPTY_ARRAY;
+        // Reconcile against any optimistic temp (same sender + same text + recent)
+        let nextList = list;
+        if (!list.some((m) => m.id === message.id)) {
+          const tempIdx = list.findIndex(
+            (m) =>
+              m._temp &&
+              m.sender_id === message.sender_id &&
+              m.type === message.type &&
+              (m.text || "") === (message.text || "")
+          );
+          if (tempIdx >= 0) {
+            nextList = list.slice();
+            nextList[tempIdx] = message;
           } else {
-            fetchConversations().catch(() => {});
-            return cs;
+            nextList = [...list, message];
           }
-          return next;
-        });
-        // Auto-mark read when message arrives in the actively-open conversation
-        if (
-          conversation_id === activeId &&
-          message.sender_id !== meId
-        ) {
-          markRead(conversation_id);
         }
-        return;
-      }
-      if (data.type === "message_status") {
-        const { message_id, conversation_id, status, at } = data;
-        setMessagesByConv((prev) => {
-          const list = prev[conversation_id];
-          if (!list) return prev;
+
+        const found = s.conversations.find((c) => c.id === conversation_id);
+        if (!found) {
+          needFetchConvs = true;
           return {
-            ...prev,
-            [conversation_id]: list.map((m) =>
-              m.id === message_id
-                ? {
-                    ...m,
-                    status,
-                    seen_at: status === "seen" ? at : m.seen_at,
-                    delivered_at:
-                      status === "delivered" ? at : m.delivered_at,
-                  }
-                : m
-            ),
+            ...s,
+            messagesByConv:
+              nextList === list ? s.messagesByConv : { ...s.messagesByConv, [conversation_id]: nextList },
+          };
+        }
+        const lastMsg = {
+          text: message.text || "",
+          sender_id: message.sender_id,
+          created_at: message.created_at,
+          type: message.type || "text",
+          media_label_key: message.type && message.type !== "text" ? message.type : undefined,
+          file_name: message.media?.file_name,
+          duration_sec: message.media?.duration_sec,
+        };
+        const updated = {
+          ...found,
+          last_message: lastMsg,
+          last_message_at: message.created_at,
+        };
+        if (message.sender_id !== meId && conversation_id !== activeId) {
+          updated.unread_count = (found.unread_count || 0) + 1;
+        }
+        const others = s.conversations.filter((c) => c.id !== conversation_id);
+        let nextConvs;
+        if (updated.kind === "saved") {
+          nextConvs = [updated, ...others.filter((c) => c.kind !== "saved")];
+        } else {
+          const savedConv = others.find((c) => c.kind === "saved");
+          if (savedConv) {
+            const rest = others.filter((c) => c.id !== savedConv.id);
+            nextConvs = [savedConv, updated, ...rest];
+          } else {
+            nextConvs = [updated, ...others];
+          }
+        }
+        return {
+          ...s,
+          conversations: nextConvs,
+          messagesByConv:
+            nextList === list ? s.messagesByConv : { ...s.messagesByConv, [conversation_id]: nextList },
+        };
+      });
+      if (needFetchConvs) fetchConversations().catch(() => {});
+      if (conversation_id === activeId && message.sender_id !== meId) {
+        markRead(conversation_id);
+      }
+      return;
+    }
+
+    if (data.type === "message_status") {
+      const { message_id, conversation_id, status, at } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        let changed = false;
+        const next = list.map((m) => {
+          if (m.id !== message_id) return m;
+          changed = true;
+          return {
+            ...m,
+            status,
+            seen_at: status === "seen" ? at : m.seen_at,
+            delivered_at: status === "delivered" ? at : m.delivered_at,
           };
         });
-        return;
-      }
-      if (data.type === "typing") {
-        const { conversation_id, user_id, is_typing } = data;
-        setTypingByConv((prev) => ({
-          ...prev,
-          [conversation_id]: { ...(prev[conversation_id] || {}), [user_id]: is_typing },
-        }));
-        return;
-      }
-      if (data.type === "presence") {
-        const { user_id, is_online, last_seen } = data;
-        setPresence((prev) => ({ ...prev, [user_id]: { is_online, last_seen } }));
-        setConversations((cs) =>
-          cs.map((c) =>
-            c.other_user && c.other_user.id === user_id
-              ? { ...c, other_user: { ...c.other_user, is_online, last_seen } }
-              : c
-          )
+        if (!changed) return s;
+        return {
+          ...s,
+          messagesByConv: { ...s.messagesByConv, [conversation_id]: next },
+        };
+      });
+      return;
+    }
+
+    if (data.type === "typing") {
+      const { conversation_id, user_id, is_typing } = data;
+      store.set((s) => {
+        const cur = s.typingByConv[conversation_id] || EMPTY_OBJECT;
+        if (!!cur[user_id] === !!is_typing) return s;
+        return {
+          ...s,
+          typingByConv: {
+            ...s.typingByConv,
+            [conversation_id]: { ...cur, [user_id]: !!is_typing },
+          },
+        };
+      });
+      return;
+    }
+
+    if (data.type === "presence") {
+      const { user_id, is_online, last_seen } = data;
+      store.set((s) => {
+        const cur = s.presence[user_id];
+        const updatedPres = { is_online: !!is_online, last_seen };
+        const presenceSame =
+          cur && cur.is_online === updatedPres.is_online && cur.last_seen === updatedPres.last_seen;
+        const nextPresence = presenceSame
+          ? s.presence
+          : { ...s.presence, [user_id]: updatedPres };
+        const nextConvs = s.conversations.map((c) =>
+          c.other_user && c.other_user.id === user_id
+            ? { ...c, other_user: { ...c.other_user, is_online: !!is_online, last_seen } }
+            : c
         );
-        return;
-      }
-    },
-    [fetchConversations, markRead]
-  );
+        return { ...s, presence: nextPresence, conversations: nextConvs };
+      });
+      return;
+    }
+  }, [fetchConversations, markRead]);
 
   const connect = useCallback(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token || !userIdRef.current) return;
-    if (wsRef.current && wsRef.current.readyState <= 1) return; // already connecting/open
+    if (wsRef.current && wsRef.current.readyState <= 1) return;
     let ws;
     try {
       ws = new WebSocket(`${wsUrlFromApi()}?token=${encodeURIComponent(token)}`);
@@ -355,29 +488,21 @@ export const MessengerProvider = ({ children }) => {
     }
     wsRef.current = ws;
     ws.onopen = () => {
-      setWsConnected(true);
+      store.set({ wsConnected: true });
       reconnectAttemptsRef.current = 0;
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-      heartbeatRef.current = setInterval(
-        () => sendWS({ type: "ping" }),
-        25000
-      );
+      heartbeatRef.current = setInterval(() => sendWS({ type: "ping" }), 25000);
     };
     ws.onmessage = handleWsMessage;
     ws.onerror = () => {
-      try {
-        ws.close();
-      } catch {
-        // ignore
-      }
+      try { ws.close(); } catch { /* ignore */ }
     };
     ws.onclose = () => {
-      setWsConnected(false);
+      store.set({ wsConnected: false });
       if (heartbeatRef.current) {
         clearInterval(heartbeatRef.current);
         heartbeatRef.current = null;
       }
-      // Reconnect with backoff (only if user still authenticated)
       if (userIdRef.current && localStorage.getItem(TOKEN_KEY)) {
         const attempts = reconnectAttemptsRef.current + 1;
         reconnectAttemptsRef.current = attempts;
@@ -402,22 +527,23 @@ export const MessengerProvider = ({ children }) => {
       try {
         wsRef.current.onclose = null;
         wsRef.current.close();
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
       wsRef.current = null;
     }
-    setWsConnected(false);
+    store.set({ wsConnected: false });
   }, []);
 
   useEffect(() => {
     if (!user) {
       disconnect();
-      setConversations([]);
-      setMessagesByConv({});
-      setTypingByConv({});
-      setPresence({});
-      setActiveConvId(null);
+      activeConvIdRef.current = null;
+      store.set({
+        conversations: [],
+        messagesByConv: {},
+        typingByConv: {},
+        presence: {},
+        activeConvId: null,
+      });
       return;
     }
     fetchConversations().catch(() => {});
@@ -429,43 +555,61 @@ export const MessengerProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // Sync unread count → document.title
+  // Sync total unread → document.title (subscribe directly to store)
   useEffect(() => {
-    const total = conversations.reduce(
-      (s, c) => s + (c.unread_count || 0),
-      0
-    );
-    document.title = total > 0 ? `(${total}) Glass` : "Glass";
-  }, [conversations]);
+    const apply = () => {
+      const total = store.get().conversations.reduce((s, c) => s + (c.unread_count || 0), 0);
+      document.title = total > 0 ? `(${total}) Glass` : "Glass";
+    };
+    apply();
+    return store.subscribe(apply);
+  }, []);
 
-  const value = {
-    wsConnected,
-    conversations,
-    messagesByConv,
-    typingByConv,
-    presence,
-    activeConvId,
-    setActiveConv,
-    sendMessage,
-    uploadMedia,
-    sendTyping,
-    openOrCreateConversation,
-    ensureSavedConversation,
-    fetchConversations,
-    loadMessages,
-    searchUsers,
-    markRead,
-  };
-
-  return (
-    <MessengerContext.Provider value={value}>
-      {children}
-    </MessengerContext.Provider>
+  const actions = useMemo(
+    () => ({
+      sendMessage,
+      uploadMedia,
+      sendTyping,
+      openOrCreateConversation,
+      ensureSavedConversation,
+      fetchConversations,
+      loadMessages,
+      searchUsers,
+      markRead,
+      setActiveConv,
+    }),
+    [
+      sendMessage,
+      uploadMedia,
+      sendTyping,
+      openOrCreateConversation,
+      ensureSavedConversation,
+      fetchConversations,
+      loadMessages,
+      searchUsers,
+      markRead,
+      setActiveConv,
+    ]
   );
+
+  return <ActionsContext.Provider value={actions}>{children}</ActionsContext.Provider>;
 };
 
-export const useMessenger = () => {
-  const ctx = useContext(MessengerContext);
-  if (!ctx) throw new Error("useMessenger must be used inside MessengerProvider");
+export const useMessengerActions = () => {
+  const ctx = useContext(ActionsContext);
+  if (!ctx) throw new Error("useMessengerActions must be used inside MessengerProvider");
   return ctx;
+};
+
+/* Back-compat shim: the prior `useMessenger()` returned both state and
+ * actions in a single object. Keep it working for any module that still
+ * imports it, but selector hooks above are preferred for perf. */
+export const useMessenger = () => {
+  const actions = useMessengerActions();
+  const conversations = useConversations();
+  const activeConvId = useActiveConvId();
+  const wsConnected = useWsConnected();
+  // Note: messagesByConv / typingByConv / presence are deliberately NOT
+  // exposed here to discourage fan-out. Use selector hooks instead.
+  return { ...actions, conversations, activeConvId, wsConnected };
 };

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { motion } from "framer-motion";
 import { Ticks } from "./Ticks";
 import { MediaContent } from "./MediaContent";
@@ -6,7 +6,7 @@ import { formatTime } from "../../lib/time";
 import { isEmojiOnly } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
 
-export const MessageBubble = ({ message, mine, showAvatar, onOpenImage, testId }) => {
+const MessageBubbleImpl = ({ message, mine, showAvatar, onOpenImage, testId }) => {
   const { lang, dir } = useI18n();
   const alignClass = mine ? "justify-end" : "justify-start";
   const isMedia = message.type && message.type !== "text";
@@ -114,3 +114,27 @@ export const MessageBubble = ({ message, mine, showAvatar, onOpenImage, testId }
     </motion.div>
   );
 };
+
+const areEqual = (prev, next) => {
+  if (prev.mine !== next.mine) return false;
+  if (prev.showAvatar !== next.showAvatar) return false;
+  if (prev.onOpenImage !== next.onOpenImage) return false;
+  if (prev.testId !== next.testId) return false;
+  const a = prev.message, b = next.message;
+  if (a === b) return true;
+  return (
+    a.id === b.id &&
+    a.status === b.status &&
+    a.text === b.text &&
+    a.type === b.type &&
+    a.created_at === b.created_at &&
+    a.seen_at === b.seen_at &&
+    a.delivered_at === b.delivered_at &&
+    a.media === b.media &&
+    a._progress === b._progress &&
+    a._localUrl === b._localUrl &&
+    a._error === b._error
+  );
+};
+
+export const MessageBubble = memo(MessageBubbleImpl, areEqual);

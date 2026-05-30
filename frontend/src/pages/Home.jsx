@@ -4,22 +4,20 @@ import { motion } from "framer-motion";
 import { Settings as SettingsIcon, Search, X } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
-import { useMessenger } from "../lib/messenger";
+import { useMessengerActions } from "../lib/messenger";
 import { GlassBackground } from "../components/GlassBackground";
 import { UserAvatar } from "../components/Avatar";
 import { ChatList } from "../components/Messenger/ChatList";
 import { SearchResults } from "../components/Messenger/SearchResults";
 import { ChatPanel } from "../components/Messenger/ChatPanel";
+import { useConversations, useActiveConvId } from "../lib/messenger";
 
 export default function Home() {
   const { user } = useAuth();
   const { t } = useI18n();
-  const {
-    conversations,
-    activeConvId,
-    openOrCreateConversation,
-    setActiveConv,
-  } = useMessenger();
+  const { openOrCreateConversation, setActiveConv } = useMessengerActions();
+  const conversations = useConversations();
+  const activeConvId = useActiveConvId();
   const [query, setQuery] = useState("");
 
   const activeConv = conversations.find((c) => c.id === activeConvId) || null;

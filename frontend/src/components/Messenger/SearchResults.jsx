@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useI18n } from "../../lib/i18n";
-import { useMessenger } from "../../lib/messenger";
+import { useMessengerActions } from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 
 export const SearchResults = ({ query, onPick }) => {
   const { t } = useI18n();
-  const { searchUsers } = useMessenger();
+  const { searchUsers } = useMessengerActions();
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 

@@ -1,0 +1,57 @@
+{
+  "summary": "Glass Messenger Phase 5A (Performance Sweep) — FULLY VERIFIED. Backend 84/84 tests pass (12 new Phase5A + 72 regression Phase1-4). Frontend perf invariants all hold: exactly 1 POST per send (single + spam-guard 5 rapid clicks), typing WS frames for a 12-char burst are exactly [True, False] (NOT 12), conversation switches saved->bob->charlie->saved trigger 0 additional GET /api/conversations, emoji picker lazy-loads on first open, settings copy-username writes '@alice' to clipboard and shows the indicator, @-search hint chip still appears, and chat list ordering keeps Saved Messages pinned first.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_glass_messenger_phase5a.py",
+    "/app/test_reports/pytest/pytest_phase5a.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "list_conversations refactor in server.py (lines 514-585) is solid: single conversations.find() + single users.find($in) + single messages.aggregate($group by conversation_id) — true O(1) round trips regardless of N conversations.",
+    "Saved partition is correctly skipped when collecting other_ids and dm_conv_ids, and me_doc is fetched once and only if a saved conv exists.",
+    "Backend response shape is unchanged: id/kind/participants/other_user/last_message/last_message_at/created_at/unread_count — verified field-by-field in TestConversationsShape.",
+    "Frontend optimistic insert + sendLockRef pattern in Composer.jsx is correct: composer clears immediately (mic button replaces send button), so even raw 5x rapid clicks on the original send-button handle dispatched only 1 POST — the swap itself naturally guards subsequent clicks (defense-in-depth on top of sendLockRef).",
+    "Typing debounce is exact: 12 keystrokes produce only [True, False] over WS — confirms (a) one transition frame at idle->typing and (b) a single trailing stop frame after the 1.5s idle window.",
+    "Store-based selectors (useSyncExternalStore) work: switching active conversation never re-fetches GET /api/conversations (confirmed 0 calls across saved->bob->charlie->saved).",
+    "Emoji picker lazy-load via React.lazy + Suspense works on first open; popover appears within the 8s wait budget with no module-load errors.",
+    "Avatar.jsx loading='lazy' decoding='async' on <img> is a free network/CPU win for long chat lists — no functional regression observed.",
+    "Backwards-compat useMessenger() shim is intentional per main agent — not flagged."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_glass_messenger_phase5a.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (84/84 — 12 new Phase5A + 72 regression Phase1-4)",
+    "frontend": "100% (all 12 Phase5A spec items verified)"
+  },
+  "test_credentials": "alice/password123, bob/password123, charlie/password123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created TEST_phase5a_unread_<hex>, TEST_phase5a_saved_<hex>, TEST_phase5a_rapid_<hex>_{0,1,2} messages plus a 'perf check' and 'spam-guard-xyz' in alice's saved conversation. Idempotent — safe to rerun.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 5A fully green. Backend tests: /app/backend/tests/test_glass_messenger_phase5a.py (12 tests: conversations shape, saved pinning, dm other_user batched fetch, unread aggregation correctness, latency<2s, repeated-calls avg<1.5s, saved persist, by-username, @-prefix search, me, rapid 3 distinct POSTs all create distinct messages). Full regression run order: test_glass_messenger.py -> _phase2.py -> _phase3.py -> _phase4.py -> _phase5a.py = 84/84 in ~19s. Frontend perf invariants verified via Playwright network + WebSocket framesent observation: (a) single send 'perf check' = 1 POST, (b) 5x rapid clicks 'spam-guard-xyz' = 1 POST (composer clear + send->mic button swap + sendLockRef = defense-in-depth), (c) 12-char keystroke burst to Bob = ws typing frames exactly [True, False], (d) saved->bob->charlie->saved switches = 0 additional GET /api/conversations, (e) emoji picker lazy-loads on first click of composer-emoji-button, (f) settings copy-username -> clipboard='@alice' + username-copied-indicator visible, (g) @-search hint chip visible on '@a'. All data-testids unchanged and stable.",
+  "phase5a_verified_items": {
+    "Backend /api/conversations shape (id/kind/participants/other_user/last_message/last_message_at/created_at/unread_count)": "PASS",
+    "Backend Saved pinned first": "PASS",
+    "Backend DM other_user batched fetch returns all 7 fields incl is_online bool": "PASS",
+    "Backend unread_count aggregation correct after peer message": "PASS",
+    "Backend GET /api/conversations latency < 2s (single)": "PASS",
+    "Backend GET /api/conversations avg latency < 1.5s over 5 calls": "PASS",
+    "Backend saved msg auto-marked status='seen' with seen_at": "PASS",
+    "Frontend: Saved Messages pinned first with PINNED badge": "PASS",
+    "Frontend: Saved header 'Saved Messages' / 'Your personal cloud' (no online dot)": "PASS",
+    "Frontend: single send 'perf check' fires exactly 1 POST + optimistic bubble": "PASS",
+    "Frontend: 5x rapid send-button clicks fire exactly 1 POST": "PASS",
+    "Frontend: 12-char keystroke burst -> WS typing frames = [True, False] exactly": "PASS",
+    "Frontend: saved->bob->charlie->saved triggers 0 GET /api/conversations": "PASS",
+    "Frontend: composer-emoji-button opens lazy-loaded emoji-picker-popover": "PASS",
+    "Frontend: @-search-hint chip appears on sidebar '@a'": "PASS",
+    "Frontend: settings-username='@alice', copy writes '@alice' to clipboard, indicator shows": "PASS"
+  },
+  "rca of the issue": "n/a — no bugs found; all Phase 5A perf invariants and Phase 4 regressions hold."
+}

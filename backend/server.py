@@ -513,9 +513,72 @@ async def create_or_get_conversation(body: CreateConversationRequest, current_us
 
 @api_router.get("/conversations")
 async def list_conversations(current_user: dict = Depends(get_current_user)):
-    cursor = db.conversations.find({"participants": current_user["_id"]})
-    docs = await cursor.to_list(500)
-    out = [await public_conversation(c, current_user["_id"]) for c in docs]
+    me_id = current_user["_id"]
+    docs = await db.conversations.find({"participants": me_id}).to_list(500)
+    if not docs:
+        return []
+
+    # Collect every "other" participant id across DMs in one pass
+    other_ids = set()
+    for c in docs:
+        if c.get("kind") == "saved":
+            continue
+        for p in c.get("participants", []):
+            if p != me_id:
+                other_ids.add(p)
+
+    # Batch fetch all other_user profiles in ONE query
+    users_by_id = {}
+    if other_ids:
+        async for u in db.users.find({"_id": {"$in": list(other_ids)}}):
+            users_by_id[u["_id"]] = u
+
+    # Batch unread counts via single aggregation across all DM conv ids
+    dm_conv_ids = [c["_id"] for c in docs if c.get("kind") != "saved"]
+    unread_by_conv = {}
+    if dm_conv_ids:
+        pipeline = [
+            {"$match": {
+                "conversation_id": {"$in": dm_conv_ids},
+                "sender_id": {"$ne": me_id},
+                "status": {"$ne": "seen"},
+                "deleted": {"$ne": True},
+            }},
+            {"$group": {"_id": "$conversation_id", "n": {"$sum": 1}}},
+        ]
+        async for row in db.messages.aggregate(pipeline):
+            unread_by_conv[row["_id"]] = row["n"]
+
+    # Need own profile once for saved conversation
+    me_doc = None
+    has_saved = any(c.get("kind") == "saved" for c in docs)
+    if has_saved:
+        me_doc = await db.users.find_one({"_id": me_id})
+
+    out = []
+    for c in docs:
+        kind = c.get("kind", "dm")
+        if kind == "saved":
+            other_pub = public_user(me_doc) if me_doc else None
+            unread = 0
+        else:
+            other_id = next((p for p in c.get("participants", []) if p != me_id), None)
+            other_doc = users_by_id.get(other_id) if other_id else None
+            other_pub = public_user(other_doc) if other_doc else None
+            if other_pub and other_id and other_doc:
+                other_pub["is_online"] = manager.is_online(other_id) or bool(other_doc.get("is_online"))
+            unread = unread_by_conv.get(c["_id"], 0)
+        out.append({
+            "id": c["_id"],
+            "kind": kind,
+            "participants": c["participants"],
+            "other_user": other_pub,
+            "last_message": c.get("last_message"),
+            "last_message_at": c.get("last_message_at"),
+            "created_at": c["created_at"],
+            "unread_count": unread,
+        })
+
     saved = [c for c in out if c.get("kind") == "saved"]
     dm = [c for c in out if c.get("kind") != "saved"]
     dm.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
