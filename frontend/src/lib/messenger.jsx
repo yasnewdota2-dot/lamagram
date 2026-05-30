@@ -480,6 +480,26 @@ export const MessengerProvider = ({ children }) => {
     }));
     return data;
   }, []);
+  const joinConversation = useCallback(async ({ handle, invite_token }) => {
+    const body = {};
+    if (handle) body.handle = handle;
+    if (invite_token) body.invite_token = invite_token;
+    const { data } = await api.post("/conversations/join", body);
+    store.set((s) => {
+      const exists = s.conversations.find((c) => c.id === data.id);
+      if (exists) {
+        // Update existing entry (so is_member/admins refresh)
+        return {
+          ...s,
+          conversations: s.conversations.map((c) => (c.id === data.id ? { ...c, ...data } : c)),
+        };
+      }
+      const saved = s.conversations.find((c) => c.kind === "saved");
+      const rest = s.conversations.filter((c) => c.kind !== "saved");
+      return { ...s, conversations: saved ? [saved, data, ...rest] : [data, ...rest] };
+    });
+    return data;
+  }, []);
   const updateGroup = useCallback(async (convId, patch) => {
     const { data } = await api.patch(`/groups/${convId}`, patch);
     store.set((s) => ({
@@ -990,6 +1010,7 @@ export const MessengerProvider = ({ children }) => {
       createGroup,
       createChannel,
       uploadChannelAvatar,
+      joinConversation,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,
@@ -1028,6 +1049,7 @@ export const MessengerProvider = ({ children }) => {
       createGroup,
       createChannel,
       uploadChannelAvatar,
+      joinConversation,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,

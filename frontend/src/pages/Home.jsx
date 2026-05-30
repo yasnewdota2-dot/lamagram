@@ -18,6 +18,7 @@ import { SearchResults } from "../components/Messenger/SearchResults";
 import { ChatPanel } from "../components/Messenger/ChatPanel";
 import { NewGroupDialog } from "../components/Messenger/GroupDialogs";
 import { NewChannelDialog } from "../components/Messenger/NewChannelDialog";
+import { JoinDialog } from "../components/Messenger/JoinDialog";
 import { useConversations, useActiveConvId } from "../lib/messenger";
 
 export default function Home() {
@@ -29,7 +30,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
-  const [showJoinPlaceholder, setShowJoinPlaceholder] = useState(false);
+  const [showJoinDialog, setShowJoinDialog] = useState(false);
 
   const activeConv = conversations.find((c) => c.id === activeConvId) || null;
 
@@ -135,7 +136,7 @@ export default function Home() {
                   <DropdownMenuItem onClick={() => setShowNewChannel(true)} data-testid="sidebar-action-new-channel">
                     <Megaphone className="w-4 h-4 mr-2" /> {t("newChannel")}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowJoinPlaceholder(true)} data-testid="sidebar-action-join-by-link">
+                  <DropdownMenuItem onClick={() => setShowJoinDialog(true)} data-testid="sidebar-action-join-by-link">
                     <LinkIcon className="w-4 h-4 mr-2" /> {t("joinByLink")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -173,23 +174,7 @@ export default function Home() {
       </div>
       <NewGroupDialog open={showNewGroup} onOpenChange={setShowNewGroup} />
       <NewChannelDialog open={showNewChannel} onOpenChange={setShowNewChannel} />
-      {showJoinPlaceholder && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(7,7,10,0.65)", backdropFilter: "blur(8px)" }}
-          onClick={() => setShowJoinPlaceholder(false)}
-          data-testid="join-placeholder-dialog"
-        >
-          <div
-            className="rounded-2xl px-8 py-6 text-center"
-            style={{ background: "rgba(15,15,22,0.92)", border: "1px solid rgba(255,255,255,0.1)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-white font-semibold mb-1">{t("joinByLink")}</div>
-            <div className="text-xs text-white/60">{t("comingSoon")}</div>
-          </div>
-        </div>
-      )}
+      <JoinDialog open={showJoinDialog} onOpenChange={setShowJoinDialog} />
     </div>
   );
 }
