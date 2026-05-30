@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { SendHorizonal, Paperclip, Smile, Mic } from "lucide-react";
+import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
-import { useMessengerActions } from "../../lib/messenger";
+import { useMessengerActions, useComposerStateForConv } from "../../lib/messenger";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { detectKind } from "../../lib/format";
 
@@ -16,7 +16,11 @@ const MAX_BYTES = 100 * 1024 * 1024;
 
 export const Composer = ({ conversationId, onUploadError }) => {
   const { t, lang } = useI18n();
-  const { sendMessage, sendTyping, uploadMedia } = useMessengerActions();
+  const { sendMessage, sendTyping, uploadMedia, editMessage, setReplyTarget, setEditTarget } = useMessengerActions();
+  const composerState = useComposerStateForConv(conversationId);
+  const replyTo = composerState.replyTo || null;
+  const editTarget = composerState.editTarget || null;
+  const isEditing = !!editTarget;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -35,6 +39,14 @@ export const Composer = ({ conversationId, onUploadError }) => {
     sendLockRef.current = false;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
   }, [conversationId]);
+
+  // When entering edit mode, prefill text + focus
+  useEffect(() => {
+    if (editTarget && (editTarget.type || "text") === "text") {
+      setText(editTarget.text || "");
+      requestAnimationFrame(() => taRef.current?.focus());
+    }
+  }, [editTarget]);
 
   const ping = useCallback((next) => {
     if (next && !isTypingRef.current) {
@@ -68,24 +80,41 @@ export const Composer = ({ conversationId, onUploadError }) => {
     if (!trimmed || sending || sendLockRef.current) return;
     sendLockRef.current = true;
     setSending(true);
-    // Clear input immediately so user can keep typing while the network
-    // request is in flight. The optimistic message is already in the store.
-    setText("");
+    // For edit, keep text visible until save resolves
+    if (!isEditing) setText("");
     ping(false);
     if (typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
     }
     try {
-      await sendMessage(conversationId, trimmed);
+      if (isEditing) {
+        await editMessage(editTarget.id, trimmed);
+        setEditTarget(conversationId, null);
+        setText("");
+      } else {
+        const opts = {};
+        if (replyTo) {
+          opts.reply_to_message_id = replyTo.id;
+          opts._optimisticReplySnapshot = {
+            message_id: replyTo.id,
+            sender_id: replyTo.sender_id,
+            type: replyTo.type,
+            text_preview: (replyTo.text || "").slice(0, 120),
+            file_name: replyTo.media?.file_name,
+          };
+        }
+        await sendMessage(conversationId, trimmed, opts);
+        if (replyTo) setReplyTarget(conversationId, null);
+      }
     } catch {
-      /* swallow — optimistic message will be marked failed by sendMessage */
+      /* swallow */
     } finally {
       setSending(false);
       sendLockRef.current = false;
       if (taRef.current) taRef.current.focus();
     }
-  }, [text, sending, conversationId, ping, sendMessage]);
+  }, [text, sending, conversationId, ping, sendMessage, editMessage, isEditing, editTarget, replyTo, setEditTarget, setReplyTarget]);
 
   const onKeyDown = useCallback((e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -154,6 +183,42 @@ export const Composer = ({ conversationId, onUploadError }) => {
       style={{ background: "rgba(11,11,18,0.6)", backdropFilter: "blur(20px)" }}
       data-testid="composer"
     >
+      {(replyTo || editTarget) && (
+        <div
+          className="mx-1 mb-2 flex items-center gap-2 px-2.5 py-1.5 rounded-xl"
+          style={{ background: "rgba(59,158,255,0.07)", border: "1px solid rgba(59,158,255,0.22)" }}
+          data-testid={editTarget ? "composer-edit-strip" : "composer-reply-strip"}
+        >
+          {editTarget ? (
+            <Pencil className="w-3.5 h-3.5 text-[#9ABEFF] shrink-0" />
+          ) : (
+            <CornerUpLeft className="w-3.5 h-3.5 text-[#9ABEFF] shrink-0" />
+          )}
+          <span className="w-[3px] self-stretch rounded-full" style={{ background: "#3B9EFF" }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-[#9ABEFF]">
+              {editTarget ? t("editing") : t("replyingTo")}
+            </div>
+            <div className="text-xs text-white truncate" style={{ unicodeBidi: "plaintext" }}>
+              {(editTarget?.text || editTarget?.media?.file_name) ||
+                (replyTo?.text || replyTo?.media?.file_name) ||
+                "…"}
+            </div>
+          </div>
+          <button
+            onClick={() =>
+              editTarget
+                ? setEditTarget(conversationId, null)
+                : setReplyTarget(conversationId, null)
+            }
+            className="p-1 rounded-md hover:bg-white/10"
+            aria-label={t("cancel")}
+            data-testid="composer-strip-cancel"
+          >
+            <X className="w-3.5 h-3.5 text-white/70" />
+          </button>
+        </div>
+      )}
       {showEmoji && (
         <div
           className="absolute bottom-full mb-3 left-3 z-30"

@@ -31,6 +31,8 @@ const initialState = {
   presence: {},
   activeConvId: null,
   wsConnected: false,
+  // Phase 5B — per-conversation composer state
+  composerByConv: {}, // { [convId]: { replyTo: msg|null, editTarget: msg|null } }
 };
 
 const createStore = (initial) => {
@@ -74,6 +76,9 @@ export const usePresenceForUser = (userId) =>
 
 export const useWsConnected = () =>
   useStoreSlice((s) => s.wsConnected);
+
+export const useComposerStateForConv = (convId) =>
+  useStoreSlice((s) => (convId ? s.composerByConv[convId] || EMPTY_OBJECT : EMPTY_OBJECT));
 
 /* ---- Actions context (stable callbacks) ---- */
 const ActionsContext = createContext(null);
@@ -136,9 +141,10 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
-  const sendMessage = useCallback(async (convId, text) => {
+  const sendMessage = useCallback(async (convId, text, opts = {}) => {
     const trimmed = (text || "").trim();
     if (!trimmed) return null;
+    const replyToId = opts.reply_to_message_id || null;
     // Optimistic insert
     const tmpId = `tmp-${Math.random().toString(36).slice(2, 10)}`;
     const nowIso = new Date().toISOString();
@@ -153,11 +159,18 @@ export const MessengerProvider = ({ children }) => {
       created_at: nowIso,
       seen_at: null,
       delivered_at: null,
+      reply_to: opts._optimisticReplySnapshot || null,
+      forwarded_from: null,
+      edited: false,
+      edited_at: null,
+      deleted_for_everyone: false,
       _temp: true,
     };
     patchMessagesForConv(convId, (list) => [...list, tmp]);
     try {
-      const { data: real } = await api.post(`/conversations/${convId}/messages`, { text: trimmed });
+      const body = { text: trimmed };
+      if (replyToId) body.reply_to_message_id = replyToId;
+      const { data: real } = await api.post(`/conversations/${convId}/messages`, body);
       patchMessagesForConv(convId, (list) => {
         const withoutTmp = list.filter((m) => m.id !== tmpId);
         if (withoutTmp.some((m) => m.id === real.id)) return withoutTmp;
@@ -184,6 +197,7 @@ export const MessengerProvider = ({ children }) => {
       if (m.startsWith("audio/")) return "voice";
       return "file";
     })();
+    const replyToId = opts.reply_to_message_id || null;
     const tmpId = `tmp-${Math.random().toString(36).slice(2, 10)}`;
     const tmpUrl = URL.createObjectURL(file);
     const nowIso = new Date().toISOString();
@@ -217,6 +231,9 @@ export const MessengerProvider = ({ children }) => {
     }
     if (opts.waveform) {
       form.append("waveform", JSON.stringify(opts.waveform));
+    }
+    if (replyToId) {
+      form.append("reply_to_message_id", replyToId);
     }
 
     try {
@@ -301,6 +318,119 @@ export const MessengerProvider = ({ children }) => {
     if (!q || !q.trim()) return [];
     const { data } = await api.get("/users/search", { params: { q } });
     return data;
+  }, []);
+
+  // Phase 5B actions: edit / delete / forward / pin / mute
+  const editMessage = useCallback(async (messageId, newText) => {
+    const { data: updated } = await api.patch(`/messages/${messageId}`, { text: newText });
+    const convId = updated.conversation_id;
+    patchMessagesForConv(convId, (list) =>
+      list.map((m) => (m.id === messageId ? { ...m, ...updated } : m))
+    );
+    return updated;
+  }, [patchMessagesForConv]);
+
+  const deleteMessage = useCallback(async (messageId, scope, convId) => {
+    if (scope === "me") {
+      // Optimistic remove
+      if (convId) {
+        patchMessagesForConv(convId, (list) => list.filter((m) => m.id !== messageId));
+      }
+      try {
+        await api.delete(`/messages/${messageId}`, { params: { scope: "me" } });
+      } catch (err) {
+        // Reload messages to restore consistency on failure
+        if (convId) loadMessages(convId).catch(() => {});
+        throw err;
+      }
+      return { ok: true, scope: "me" };
+    }
+    // scope === "all" — optimistic tombstone
+    if (convId) {
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) =>
+          m.id === messageId
+            ? { ...m, deleted_for_everyone: true, text: "", media: null }
+            : m
+        )
+      );
+    }
+    try {
+      await api.delete(`/messages/${messageId}`, { params: { scope: "all" } });
+    } catch (err) {
+      if (convId) loadMessages(convId).catch(() => {});
+      throw err;
+    }
+    return { ok: true, scope: "all" };
+  }, [patchMessagesForConv, loadMessages]);
+
+  const forwardMessages = useCallback(async (messageId, conversationIds) => {
+    const { data } = await api.post(`/messages/${messageId}/forward`, {
+      conversation_ids: conversationIds,
+    });
+    return data;
+  }, []);
+
+  const setPinned = useCallback(async (convId, pinned) => {
+    try {
+      const { data } = pinned
+        ? await api.post(`/conversations/${convId}/pin`)
+        : await api.delete(`/conversations/${convId}/pin`);
+      store.set((s) => ({
+        ...s,
+        conversations: s.conversations.map((c) =>
+          c.id === convId ? { ...c, is_pinned: data.is_pinned, is_muted: data.is_muted } : c
+        ),
+      }));
+      // Refetch list to apply server's pin-aware sort order
+      fetchConversations().catch(() => {});
+      return data;
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchConversations]);
+
+  const setMuted = useCallback(async (convId, muted) => {
+    const { data } = muted
+      ? await api.post(`/conversations/${convId}/mute`)
+      : await api.delete(`/conversations/${convId}/mute`);
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) =>
+        c.id === convId ? { ...c, is_pinned: data.is_pinned, is_muted: data.is_muted } : c
+      ),
+    }));
+    return data;
+  }, []);
+
+  // Composer per-conversation state (reply target / edit target)
+  const setReplyTarget = useCallback((convId, replyTo) => {
+    store.set((s) => ({
+      ...s,
+      composerByConv: {
+        ...s.composerByConv,
+        [convId]: { ...(s.composerByConv[convId] || {}), replyTo, editTarget: null },
+      },
+    }));
+  }, []);
+
+  const setEditTarget = useCallback((convId, editTarget) => {
+    store.set((s) => ({
+      ...s,
+      composerByConv: {
+        ...s.composerByConv,
+        [convId]: { ...(s.composerByConv[convId] || {}), editTarget, replyTo: null },
+      },
+    }));
+  }, []);
+
+  const clearComposerState = useCallback((convId) => {
+    store.set((s) => {
+      if (!s.composerByConv[convId]) return s;
+      const next = { ...s.composerByConv };
+      delete next[convId];
+      return { ...s, composerByConv: next };
+    });
   }, []);
 
   const setActiveConv = useCallback(async (convId) => {
@@ -439,6 +569,68 @@ export const MessengerProvider = ({ children }) => {
       return;
     }
 
+    if (data.type === "message_edited") {
+      const { message_id, conversation_id, text, edited_at } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        let nextMsgs = s.messagesByConv;
+        if (list) {
+          let changed = false;
+          const updated = list.map((m) => {
+            if (m.id !== message_id) return m;
+            changed = true;
+            return { ...m, text, edited: true, edited_at };
+          });
+          if (changed) {
+            nextMsgs = { ...s.messagesByConv, [conversation_id]: updated };
+          }
+        }
+        // Update conversation last_message if this was the latest
+        const conv = s.conversations.find((c) => c.id === conversation_id);
+        let nextConvs = s.conversations;
+        if (conv && conv.last_message) {
+          const newLast = { ...conv.last_message, text };
+          nextConvs = s.conversations.map((c) =>
+            c.id === conversation_id ? { ...c, last_message: newLast } : c
+          );
+        }
+        return { ...s, messagesByConv: nextMsgs, conversations: nextConvs };
+      });
+      return;
+    }
+
+    if (data.type === "message_deleted") {
+      const { message_id, conversation_id } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        let nextMsgs = s.messagesByConv;
+        if (list) {
+          const updated = list.map((m) =>
+            m.id === message_id
+              ? { ...m, deleted_for_everyone: true, text: "", media: null }
+              : m
+          );
+          nextMsgs = { ...s.messagesByConv, [conversation_id]: updated };
+        }
+        return { ...s, messagesByConv: nextMsgs };
+      });
+      // Refresh conversations so last_message reflects server state
+      fetchConversations().catch(() => {});
+      return;
+    }
+
+    if (data.type === "conversation_updated") {
+      const { conversation_id, is_pinned, is_muted } = data;
+      store.set((s) => ({
+        ...s,
+        conversations: s.conversations.map((c) =>
+          c.id === conversation_id ? { ...c, is_pinned, is_muted } : c
+        ),
+      }));
+      fetchConversations().catch(() => {});
+      return;
+    }
+
     if (data.type === "typing") {
       const { conversation_id, user_id, is_typing } = data;
       store.set((s) => {
@@ -558,7 +750,10 @@ export const MessengerProvider = ({ children }) => {
   // Sync total unread → document.title (subscribe directly to store)
   useEffect(() => {
     const apply = () => {
-      const total = store.get().conversations.reduce((s, c) => s + (c.unread_count || 0), 0);
+      const total = store.get().conversations.reduce(
+        (s, c) => s + (c.is_muted ? 0 : (c.unread_count || 0)),
+        0,
+      );
       document.title = total > 0 ? `(${total}) Glass` : "Glass";
     };
     apply();
@@ -577,6 +772,14 @@ export const MessengerProvider = ({ children }) => {
       searchUsers,
       markRead,
       setActiveConv,
+      editMessage,
+      deleteMessage,
+      forwardMessages,
+      setPinned,
+      setMuted,
+      setReplyTarget,
+      setEditTarget,
+      clearComposerState,
     }),
     [
       sendMessage,
@@ -589,6 +792,14 @@ export const MessengerProvider = ({ children }) => {
       searchUsers,
       markRead,
       setActiveConv,
+      editMessage,
+      deleteMessage,
+      forwardMessages,
+      setPinned,
+      setMuted,
+      setReplyTarget,
+      setEditTarget,
+      clearComposerState,
     ]
   );
 

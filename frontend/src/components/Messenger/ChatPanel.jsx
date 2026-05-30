@@ -15,6 +15,7 @@ import { TypingDots } from "./TypingDots";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
+import { ForwardDialog } from "./ForwardDialog";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative, isWithinMinutes } from "../../lib/time";
 
@@ -51,6 +52,7 @@ export const ChatPanel = ({ conversation }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
   const { uploadMedia } = useMessengerActions();
+  const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
   const convId = conversation?.id;
   const messages = useMessagesForConv(convId);
   const typingMap = useTypingForConv(convId);
@@ -63,6 +65,44 @@ export const ChatPanel = ({ conversation }) => {
   const [pendingNew, setPendingNew] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState("");
+  const [forwardSource, setForwardSource] = useState(null);
+
+  const handleReply = React.useCallback(
+    (m) => setReplyTarget(convId, m),
+    [convId, setReplyTarget]
+  );
+  const handleEdit = React.useCallback(
+    (m) => setEditTarget(convId, m),
+    [convId, setEditTarget]
+  );
+  const handleForward = React.useCallback((m) => setForwardSource(m), []);
+  const handleDelete = React.useCallback(
+    async (m, scope) => {
+      if (scope === "all") {
+        if (!window.confirm(t("confirmDeleteAll"))) return;
+      }
+      try {
+        await deleteMessage(m.id, scope, convId);
+      } catch (e) {
+        setToast(e?.response?.data?.detail || e.message);
+      }
+    },
+    [convId, deleteMessage, t]
+  );
+  const handleJumpToReply = React.useCallback(
+    (msgId) => {
+      const el = scrollRef.current?.querySelector(`[data-testid^="message-"][data-msgid="${msgId}"]`);
+      if (!el) {
+        setToast(t("messageNotInView"));
+        return;
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "background 0.4s";
+      el.style.background = "rgba(59,158,255,0.18)";
+      setTimeout(() => { el.style.background = "transparent"; }, 900);
+    },
+    [t]
+  );
 
   const isOnline = livePres ? livePres.is_online : !!other?.is_online;
   const lastSeen = livePres?.last_seen || other?.last_seen;
@@ -217,14 +257,20 @@ export const ChatPanel = ({ conversation }) => {
               prev.sender_id !== m.sender_id ||
               !isWithinMinutes(prev.created_at, m.created_at, 2);
             return (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                mine={mine}
-                showAvatar={showAvatar}
-                onOpenImage={setLightboxSrc}
-                testId={`message-${m.id}`}
-              />
+              <div key={m.id} data-msgid={m.id}>
+                <MessageBubble
+                  message={m}
+                  mine={mine}
+                  showAvatar={showAvatar}
+                  onOpenImage={setLightboxSrc}
+                  onReply={handleReply}
+                  onForward={handleForward}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onJumpToReply={handleJumpToReply}
+                  testId={`message-${m.id}`}
+                />
+              </div>
             );
           })
         )}
@@ -285,6 +331,15 @@ export const ChatPanel = ({ conversation }) => {
       )}
 
       <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      <ForwardDialog
+        open={!!forwardSource}
+        onOpenChange={(v) => !v && setForwardSource(null)}
+        sourceMessage={forwardSource}
+        onDone={(n) => {
+          const msg = n === 1 ? t("forwardedToOne") : t("forwardedToN").replace("{n}", String(n));
+          setToast(msg);
+        }}
+      />
     </div>
   );
 };

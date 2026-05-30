@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 5B (Reply/Forward/Edit/Delete/Pin/Mute) tested end-to-end. Backend: 15/15 new Phase 5B tests pass (reply snapshot, edit + 403 non-sender, delete-for-me, delete-for-everyone tombstone + 403 non-sender, forward to 2 convs with forwarded_from + skips non-participant, pin sets is_pinned + sort order saved->pinned->unpinned, pin-cap-5 returns 400 on 6th, mute toggles is_muted, WS message_edited/message_deleted broadcast to peer, WS conversation_updated to toggling user). Full regression: 96/99 passing — the 3 phase-2 failures are pre-existing seed-ordering brittleness (last_message_at gets bumped by later tests), NOT a 5B regression. Frontend Playwright: reply strip + cancel, forward dialog with 15 chat rows + search input, edit strip, chat-row context menu (Pin/Mute/Mark-as-read), pin icon and mute icon appear after their actions — all verified. Bubble rendering of reply quote, 'edited' suffix, tombstone and forwarded messages visually confirmed in screenshot.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/conversations (phase 2 seed sort tests)", "issue": "3 pre-existing phase 2 tests fail because earlier tests in the run send TEST_ messages that update last_message_at, shifting the expected seeded-sort order. Pre-existing; not introduced by Phase 5B."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ForwardDialog", "issues": ["Console accessibility warnings: DialogContent missing DialogTitle and aria-describedby. Wrap title with VisuallyHidden or add a DialogTitle/Description."]},
+      {"screen": "Home / ChatList", "issues": ["React DOM warning: <button> cannot be a descendant of <button> (the ChatRow context-menu trigger appears to be a nested button inside a button row). Causes a hydration error log. Functional but should be refactored to a non-button wrapper or asChild."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_glass_messenger_phase5b.py",
+    "/app/test_reports/pytest/pytest_phase5b.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add DialogTitle (or VisuallyHidden wrapper) + Description to ForwardDialog to silence Radix a11y warnings.",
+    "(Optional) Fix nested-<button> in ChatRow context-menu trigger to remove React DOM nesting error.",
+    "(Optional) Stabilize phase 2 seed-sort tests so they don't depend on a clean DB state after later tests run; e.g., move them to a separate module or use freshly-created TEST_ conversations only."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1506 lines and growing — consider splitting endpoints into routers (messages_router, conversations_router, auth_router) per the >700 lines guideline.",
+    "Phase 5B backend correctly excludes _id from public_message and uses async DB ops throughout.",
+    "Forward endpoint correctly re-uses media URL (no re-upload) and silently skips non-participant conversations rather than 403, which is consistent with the spec ('copies type/text/media, sets forwarded_from')."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_glass_messenger_phase5b.py"
+  ],
+  "success_rate": {"backend": "100% on Phase 5B (15/15); 97% overall (96/99)", "frontend": "100% on Phase 5B interactions tested"},
+  "test_credentials": "alice/password123, bob/password123, charlie/password123",
+  "seed_data_creation": "Created ephemeral users pin5b_0..pin5b_5 during pin-cap-5 test (alice opens DMs with them); these remain in DB but are harmless. Various TEST_5B_* messages added to alice<->bob and alice<->charlie DMs.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 5B is functionally complete. Login uses access_token (not 'token'). WebSocket URL is wss://<host>/api/ws?token=<jwt>. ForwardDialog renders 15 chat rows by default; DropdownMenu items only render when their trigger is hovered+clicked, sub-menu (Delete) needs hover. delete-for-everyone shows window.confirm() — accept via page.on('dialog', ...). Minor a11y warnings on ForwardDialog (missing DialogTitle) and nested-button hydration warning in ChatRow are non-blocking."
+}

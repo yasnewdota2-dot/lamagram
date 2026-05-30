@@ -12,7 +12,7 @@ import logging
 import asyncio
 import shutil
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
 
 import bcrypt
 import jwt
@@ -307,6 +307,7 @@ async def upload_avatar(
 class SendMessageRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     text: str = Field(..., min_length=1, max_length=4000)
+    reply_to_message_id: Optional[str] = None
 
     @field_validator("text")
     @classmethod
@@ -316,11 +317,57 @@ class SendMessageRequest(BaseModel):
             raise ValueError("Message text cannot be empty")
         return v
 
+class EditMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    text: str = Field(..., min_length=1, max_length=4000)
+
+    @field_validator("text")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Message text cannot be empty")
+        return v
+
+class ForwardMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    conversation_ids: List[str] = Field(..., min_length=1, max_length=10)
+
 class CreateConversationRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
 
+EDIT_WINDOW_SECONDS = 48 * 60 * 60       # 48 hours
+DELETE_ALL_WINDOW_SECONDS = 24 * 60 * 60  # 24 hours
+MAX_PINNED_DMS_PER_USER = 5
+
+def _text_preview(text: Optional[str], limit: int = 120) -> str:
+    if not text:
+        return ""
+    t = text.strip()
+    if len(t) <= limit:
+        return t
+    return t[: limit - 1].rstrip() + "…"
+
 def public_message(m: dict) -> dict:
+    if m.get("deleted_for_everyone"):
+        return {
+            "id": m["_id"],
+            "conversation_id": m["conversation_id"],
+            "sender_id": m["sender_id"],
+            "type": "text",
+            "text": "",
+            "media": None,
+            "status": m.get("status", "sent"),
+            "created_at": m["created_at"],
+            "seen_at": m.get("seen_at"),
+            "delivered_at": m.get("delivered_at"),
+            "reply_to": None,
+            "forwarded_from": None,
+            "edited": False,
+            "edited_at": None,
+            "deleted_for_everyone": True,
+        }
     return {
         "id": m["_id"],
         "conversation_id": m["conversation_id"],
@@ -332,7 +379,30 @@ def public_message(m: dict) -> dict:
         "created_at": m["created_at"],
         "seen_at": m.get("seen_at"),
         "delivered_at": m.get("delivered_at"),
+        "reply_to": m.get("reply_to"),
+        "forwarded_from": m.get("forwarded_from"),
+        "edited": bool(m.get("edited")),
+        "edited_at": m.get("edited_at"),
+        "deleted_for_everyone": False,
     }
+
+async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:
+    src = await db.messages.find_one({"_id": reply_to_message_id})
+    if not src or src.get("conversation_id") != conv_id:
+        raise HTTPException(400, "reply_to_message_id is not in this conversation")
+    if src.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot reply to a deleted message")
+    src_type = src.get("type", "text")
+    snap = {
+        "message_id": src["_id"],
+        "sender_id": src["sender_id"],
+        "type": src_type,
+        "text_preview": _text_preview(src.get("text", "")),
+    }
+    media = src.get("media") or {}
+    if src_type == "file" and media.get("file_name"):
+        snap["file_name"] = media["file_name"]
+    return snap
 
 async def public_conversation(c: dict, me_id: str) -> dict:
     kind = c.get("kind", "dm")
@@ -577,12 +647,17 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
             "last_message_at": c.get("last_message_at"),
             "created_at": c["created_at"],
             "unread_count": unread,
+            "is_pinned": me_id in (c.get("pinned_by") or []),
+            "is_muted": me_id in (c.get("muted_by") or []),
         })
 
     saved = [c for c in out if c.get("kind") == "saved"]
     dm = [c for c in out if c.get("kind") != "saved"]
-    dm.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
-    return saved + dm
+    pinned_dm = [c for c in dm if c["is_pinned"]]
+    unpinned_dm = [c for c in dm if not c["is_pinned"]]
+    pinned_dm.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
+    unpinned_dm.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
+    return saved + pinned_dm + unpinned_dm
 
 @api_router.get("/conversations/{conv_id}/messages")
 async def get_messages(
@@ -598,6 +673,8 @@ async def get_messages(
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
     query: dict = {"conversation_id": conv_id, "deleted": {"$ne": True}}
+    me_id = current_user["_id"]
+    query["deleted_for"] = {"$ne": me_id}
     if before:
         before_msg = await db.messages.find_one({"_id": before})
         if before_msg:
@@ -621,6 +698,9 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         initial_status = "seen"
     else:
         initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+    reply_snap = None
+    if body.reply_to_message_id:
+        reply_snap = await build_reply_snapshot(body.reply_to_message_id, conv_id)
     msg = {
         "_id": str(uuid.uuid4()),
         "conversation_id": conv_id,
@@ -632,6 +712,12 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         "seen_at": now if is_saved else None,
         "delivered_at": now if initial_status in ("delivered", "seen") else None,
         "deleted": False,
+        "reply_to": reply_snap,
+        "forwarded_from": None,
+        "edited": False,
+        "edited_at": None,
+        "deleted_for": [],
+        "deleted_for_everyone": False,
     }
     await db.messages.insert_one(msg)
     last = {"text": msg["text"], "sender_id": msg["sender_id"], "created_at": now, "type": "text"}
@@ -698,6 +784,7 @@ async def upload_message_media(
     file: UploadFile = File(...),
     duration_sec: Optional[float] = Form(None),
     waveform: Optional[str] = Form(None),
+    reply_to_message_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user),
 ):
     if kind not in ("image", "video", "file", "voice"):
@@ -791,6 +878,9 @@ async def upload_message_media(
         initial_status = "seen"
     else:
         initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+    reply_snap = None
+    if reply_to_message_id:
+        reply_snap = await build_reply_snapshot(reply_to_message_id, conversation_id)
     msg = {
         "_id": str(uuid.uuid4()),
         "conversation_id": conversation_id,
@@ -803,6 +893,12 @@ async def upload_message_media(
         "seen_at": now_iso if is_saved else None,
         "delivered_at": now_iso if initial_status in ("delivered", "seen") else None,
         "deleted": False,
+        "reply_to": reply_snap,
+        "forwarded_from": None,
+        "edited": False,
+        "edited_at": None,
+        "deleted_for": [],
+        "deleted_for_everyone": False,
     }
     await db.messages.insert_one(msg)
 
@@ -843,6 +939,302 @@ async def upload_message_media(
             await manager.send_to_user(current_user["_id"], status_payload)
             await manager.send_to_user(other_id, status_payload)
     return pm
+
+# ---------------------------------------------------------------------------
+# Phase 5B — Edit, Delete, Forward, Pin, Mute
+# ---------------------------------------------------------------------------
+
+def _parse_iso(s: Optional[str]) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+async def _format_last_message_for_conv(conv_id: str) -> Optional[dict]:
+    """Return the last_message snapshot for a conversation after a delete-for-everyone
+    or edit, by reading the newest live message (excludes globally-deleted messages from
+    showing original content). Returns None if no live messages exist."""
+    doc = await db.messages.find_one(
+        {"conversation_id": conv_id, "deleted": {"$ne": True}},
+        sort=[("created_at", -1)],
+    )
+    if not doc:
+        return None
+    if doc.get("deleted_for_everyone"):
+        return {
+            "text": "",
+            "sender_id": doc["sender_id"],
+            "created_at": doc["created_at"],
+            "type": "deleted",
+        }
+    t = doc.get("type", "text")
+    label = doc.get("text", "") if t == "text" else {
+        "image": "Photo",
+        "video": "Video",
+        "file": (doc.get("media") or {}).get("file_name") or "File",
+        "voice": f"Voice {int((doc.get('media') or {}).get('duration_sec') or 0)}s",
+    }.get(t, "")
+    last = {
+        "text": label,
+        "sender_id": doc["sender_id"],
+        "created_at": doc["created_at"],
+        "type": t,
+    }
+    if t in ("image", "video", "file", "voice"):
+        last["media_label_key"] = t
+        if t == "file":
+            last["file_name"] = (doc.get("media") or {}).get("file_name")
+        if t == "voice":
+            last["duration_sec"] = (doc.get("media") or {}).get("duration_sec")
+    return last
+
+@api_router.patch("/messages/{message_id}")
+async def edit_message(message_id: str, body: EditMessageRequest, current_user: dict = Depends(get_current_user)):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    if msg["sender_id"] != current_user["_id"]:
+        raise HTTPException(403, "Only the sender can edit")
+    if msg.get("type", "text") != "text":
+        raise HTTPException(400, "Only text messages can be edited")
+    if msg.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot edit a deleted message")
+    created = _parse_iso(msg.get("created_at"))
+    if created and (datetime.now(timezone.utc) - created).total_seconds() > EDIT_WINDOW_SECONDS:
+        raise HTTPException(400, "Edit window (48h) has expired")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.messages.update_one(
+        {"_id": message_id},
+        {"$set": {"text": body.text, "edited": True, "edited_at": now}},
+    )
+    msg["text"] = body.text
+    msg["edited"] = True
+    msg["edited_at"] = now
+    conv_id = msg["conversation_id"]
+    # Update conversation last_message if this is the most recent message
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if conv and conv.get("last_message") and (conv.get("last_message_at") == msg["created_at"]):
+        await db.conversations.update_one(
+            {"_id": conv_id},
+            {"$set": {"last_message": {**conv["last_message"], "text": body.text}}},
+        )
+    payload = {
+        "type": "message_edited",
+        "message_id": message_id,
+        "conversation_id": conv_id,
+        "text": body.text,
+        "edited_at": now,
+    }
+    for pid in (conv or {}).get("participants", []):
+        await manager.send_to_user(pid, payload)
+    return public_message(msg)
+
+@api_router.delete("/messages/{message_id}")
+async def delete_message(
+    message_id: str,
+    scope: str = "me",
+    current_user: dict = Depends(get_current_user),
+):
+    if scope not in ("me", "all"):
+        raise HTTPException(400, "scope must be 'me' or 'all'")
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    conv = await db.conversations.find_one({"_id": msg["conversation_id"]})
+    if not conv or current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+
+    if scope == "me":
+        await db.messages.update_one(
+            {"_id": message_id},
+            {"$addToSet": {"deleted_for": current_user["_id"]}},
+        )
+        return {"ok": True, "scope": "me"}
+
+    # scope == "all"
+    if msg["sender_id"] != current_user["_id"]:
+        raise HTTPException(403, "Only the sender can delete for everyone")
+    created = _parse_iso(msg.get("created_at"))
+    if created and (datetime.now(timezone.utc) - created).total_seconds() > DELETE_ALL_WINDOW_SECONDS:
+        raise HTTPException(400, "Delete-for-everyone window (24h) has expired")
+    # Best-effort media file cleanup
+    media = msg.get("media") or {}
+    media_url = media.get("url")
+    if media_url and media_url.startswith("/api/uploads/"):
+        try:
+            rel = media_url[len("/api/uploads/"):]
+            file_path = UPLOAD_DIR / rel
+            file_path = file_path.resolve()
+            if str(file_path).startswith(str(UPLOAD_DIR.resolve())) and file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass
+    await db.messages.update_one(
+        {"_id": message_id},
+        {"$set": {
+            "deleted_for_everyone": True,
+            "text": "",
+            "media": None,
+        }},
+    )
+    # Update conversation last_message if this was the latest
+    if conv.get("last_message_at") == msg["created_at"]:
+        new_last = await _format_last_message_for_conv(msg["conversation_id"])
+        await db.conversations.update_one(
+            {"_id": msg["conversation_id"]},
+            {"$set": {
+                "last_message": new_last,
+                "last_message_at": (new_last or {}).get("created_at"),
+            }},
+        )
+    payload = {
+        "type": "message_deleted",
+        "message_id": message_id,
+        "conversation_id": msg["conversation_id"],
+        "scope": "all",
+    }
+    for pid in conv.get("participants", []):
+        await manager.send_to_user(pid, payload)
+    return {"ok": True, "scope": "all"}
+
+@api_router.post("/messages/{message_id}/forward")
+async def forward_message(
+    message_id: str,
+    body: ForwardMessageRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    src = await db.messages.find_one({"_id": message_id})
+    if not src:
+        raise HTTPException(404, "Source message not found")
+    if src.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot forward a deleted message")
+    # Resolve original sender once
+    orig_sender = await db.users.find_one({"_id": src["sender_id"]})
+    orig_info = {
+        "original_message_id": src["_id"],
+        "original_sender_id": src["sender_id"],
+        "original_sender_username": (orig_sender or {}).get("username"),
+        "original_sender_display_name": (orig_sender or {}).get("display_name"),
+    }
+    # If the source itself was forwarded, preserve the original origin
+    if src.get("forwarded_from"):
+        orig_info = src["forwarded_from"]
+
+    created = []
+    for target_id in body.conversation_ids:
+        conv = await db.conversations.find_one({"_id": target_id})
+        if not conv or current_user["_id"] not in conv["participants"]:
+            continue  # silently skip non-participant or unknown
+        other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
+        is_saved = conv.get("kind") == "saved"
+        now = datetime.now(timezone.utc).isoformat()
+        if is_saved:
+            initial_status = "seen"
+        else:
+            initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+        msg = {
+            "_id": str(uuid.uuid4()),
+            "conversation_id": target_id,
+            "sender_id": current_user["_id"],
+            "type": src.get("type", "text"),
+            "text": src.get("text", ""),
+            "media": src.get("media"),  # reuse same media URL (no re-upload)
+            "status": initial_status,
+            "created_at": now,
+            "seen_at": now if is_saved else None,
+            "delivered_at": now if initial_status in ("delivered", "seen") else None,
+            "deleted": False,
+            "reply_to": None,
+            "forwarded_from": orig_info,
+            "edited": False,
+            "edited_at": None,
+            "deleted_for": [],
+            "deleted_for_everyone": False,
+        }
+        await db.messages.insert_one(msg)
+        # last_message label
+        t = msg["type"]
+        if t == "text":
+            last_text = msg["text"]
+        else:
+            label = {
+                "image": "Photo",
+                "video": "Video",
+                "file": (msg.get("media") or {}).get("file_name") or "File",
+                "voice": f"Voice {int((msg.get('media') or {}).get('duration_sec') or 0)}s",
+            }.get(t, "")
+            last_text = label
+        last = {
+            "text": last_text,
+            "sender_id": msg["sender_id"],
+            "created_at": now,
+            "type": t,
+        }
+        if t in ("image", "video", "file", "voice"):
+            last["media_label_key"] = t
+            if t == "file":
+                last["file_name"] = (msg.get("media") or {}).get("file_name")
+            if t == "voice":
+                last["duration_sec"] = (msg.get("media") or {}).get("duration_sec")
+        await db.conversations.update_one(
+            {"_id": target_id},
+            {"$set": {"last_message": last, "last_message_at": now}},
+        )
+        pm = public_message(msg)
+        new_payload = {"type": "message_new", "message": pm, "conversation_id": target_id}
+        for pid in conv["participants"]:
+            await manager.send_to_user(pid, new_payload)
+        created.append(pm)
+    return {"forwarded": len(created), "messages": created}
+
+async def _toggle_set_field(conv_id: str, me_id: str, field: str, add: bool, *, cap: Optional[int] = None) -> dict:
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if me_id not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    if add and cap is not None and conv.get("kind") != "saved":
+        # Count user's currently pinned DMs (excluding saved)
+        existing = await db.conversations.count_documents({
+            "participants": me_id,
+            "kind": {"$ne": "saved"},
+            field: me_id,
+            "_id": {"$ne": conv_id},
+        })
+        already_set = me_id in (conv.get(field) or [])
+        if not already_set and existing >= cap:
+            raise HTTPException(400, f"Up to {cap} pinned chats")
+    op = "$addToSet" if add else "$pull"
+    await db.conversations.update_one({"_id": conv_id}, {op: {field: me_id}})
+    updated = await db.conversations.find_one({"_id": conv_id})
+    is_pinned = me_id in (updated.get("pinned_by") or [])
+    is_muted = me_id in (updated.get("muted_by") or [])
+    payload = {
+        "type": "conversation_updated",
+        "conversation_id": conv_id,
+        "is_pinned": is_pinned,
+        "is_muted": is_muted,
+    }
+    await manager.send_to_user(me_id, payload)
+    return {"id": conv_id, "is_pinned": is_pinned, "is_muted": is_muted}
+
+@api_router.post("/conversations/{conv_id}/pin")
+async def pin_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _toggle_set_field(conv_id, current_user["_id"], "pinned_by", add=True, cap=MAX_PINNED_DMS_PER_USER)
+
+@api_router.delete("/conversations/{conv_id}/pin")
+async def unpin_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _toggle_set_field(conv_id, current_user["_id"], "pinned_by", add=False)
+
+@api_router.post("/conversations/{conv_id}/mute")
+async def mute_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _toggle_set_field(conv_id, current_user["_id"], "muted_by", add=True)
+
+@api_router.delete("/conversations/{conv_id}/mute")
+async def unmute_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _toggle_set_field(conv_id, current_user["_id"], "muted_by", add=False)
 
 # ---------------------------------------------------------------------------
 # WebSocket — /api/ws
@@ -1087,6 +1479,27 @@ async def on_startup():
         )
         if res.modified_count:
             logger.info(f"Migration: marked {res.modified_count} saved-message rows as seen")
+
+    # Phase 5B migration — backfill new fields on messages + conversations
+    msg_backfill = await db.messages.update_many(
+        {"deleted_for": {"$exists": False}},
+        {"$set": {
+            "reply_to": None,
+            "forwarded_from": None,
+            "edited": False,
+            "edited_at": None,
+            "deleted_for": [],
+            "deleted_for_everyone": False,
+        }},
+    )
+    if msg_backfill.modified_count:
+        logger.info(f"Migration (Phase 5B): backfilled {msg_backfill.modified_count} message rows")
+    conv_backfill = await db.conversations.update_many(
+        {"pinned_by": {"$exists": False}},
+        {"$set": {"pinned_by": [], "muted_by": []}},
+    )
+    if conv_backfill.modified_count:
+        logger.info(f"Migration (Phase 5B): backfilled {conv_backfill.modified_count} conversation rows")
 
 @app.on_event("shutdown")
 async def on_shutdown():
