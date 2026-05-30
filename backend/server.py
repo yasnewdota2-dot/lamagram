@@ -2591,13 +2591,22 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
                 if not conv or user_id not in conv["participants"]:
                     continue
                 other_id = next((p for p in conv["participants"] if p != user_id), None)
-                if other_id:
-                    await manager.send_to_user(other_id, {
-                        "type": "typing",
-                        "conversation_id": conv_id,
-                        "user_id": user_id,
-                        "is_typing": is_typing,
-                    })
+                # Channels: only admins can post, only members watch typing of admins.
+                # For DMs there's a single peer; for groups we must fan out to every
+                # non-sender participant so headers can render typing names properly.
+                payload = {
+                    "type": "typing",
+                    "conversation_id": conv_id,
+                    "user_id": user_id,
+                    "is_typing": is_typing,
+                }
+                kind = conv.get("kind") or "dm"
+                if kind == "group":
+                    for pid in conv["participants"]:
+                        if pid != user_id:
+                            await manager.send_to_user(pid, payload)
+                elif other_id:
+                    await manager.send_to_user(other_id, payload)
     except WebSocketDisconnect:
         pass
     except Exception as e:

@@ -196,3 +196,21 @@ See `/app/memory/test_credentials.md`. Primary: **alice / password123**.
 - Some inline `style={{ background: rgba(11,11,18,...) }}` in dialogs still routed through override layer
 - "PINNED" pill text color (`#C9B8FF`) is low-contrast in light mode
 - Typography/spacing/scrollbar/skeleton/empty-state polish pass deferred
+
+
+## Phase 9C — Public chat preview + group typing names (2026-02-Feb) — COMPLETE
+- [x] `PublicChatPreviewDrawer.jsx` — provider + `usePublicChatPreview` hook; opens via `/c/handle` mentions or sidebar public-chats search; renders title/handle/count/desc/primary-action; Join routes through `/api/conversations/join`.
+- [x] `SearchResults.jsx` — new "Public chats" section fed by `GET /api/discover?q=` (debounced 250ms), strips leading `@` for handle searches, each row opens the preview drawer.
+- [x] `MessageBubble.jsx` — `/c/handle` mention segments route through `openPublicChat(handle)` instead of activating the conversation directly.
+- [x] `ChatPanel.jsx` — group typing label with names (`X is typing` / `X and Y are typing` / `N people typing`) renders as `data-testid="chat-header-group-typing"`, falls back to `chat-header-group-members`.
+- [x] Backend `server.py` typing handler fixed: groups now fan out the typing event to **every** non-sender participant (was previously DM-only logic that only delivered to one peer).
+- [x] i18n: added Persian translations for `publicChats`, `joinThisGroup`, `joinThisChannel`, `openConversation`, `searchPlain`.
+
+## Next action items
+- Phase 9C Item 2 (P1): Multi-select messages — long-press to enter selection mode + sticky top toolbar (Forward, Delete, Copy multi).
+- Phase 9C Item 3 (P2): Refactor `GroupDialogs.jsx` to a single-step dialog (drop the member picker; backend already accepts `participant_ids=[]`).
+- Phase 8A leftover (P2): Polish `ChannelDialogs.jsx` borders/toggles in both light + dark modes.
+- Phase 9D (P1): Admin custom titles + granular permissions.
+
+## Potential improvement
+Consider monetising public channels: add a lightweight "Pinned promotion slot" admins can sell, surface paid promotions inside the new `PublicChatPreviewDrawer` description block. Revenue lift without extra UI surface.
