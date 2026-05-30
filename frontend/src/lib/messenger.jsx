@@ -433,6 +433,107 @@ export const MessengerProvider = ({ children }) => {
     });
   }, []);
 
+  // Phase 5C — groups / search / starred
+  const createGroup = useCallback(async ({ title, participant_ids, description }) => {
+    const { data } = await api.post("/groups", { title, participant_ids, description });
+    store.set((s) => {
+      const exists = s.conversations.find((c) => c.id === data.id);
+      if (exists) return s;
+      const saved = s.conversations.find((c) => c.kind === "saved");
+      const rest = s.conversations.filter((c) => c.kind !== "saved");
+      return {
+        ...s,
+        conversations: saved ? [saved, data, ...rest] : [data, ...rest],
+      };
+    });
+    return data;
+  }, []);
+  const updateGroup = useCallback(async (convId, patch) => {
+    const { data } = await api.patch(`/groups/${convId}`, patch);
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) => (c.id === convId ? { ...c, ...data } : c)),
+    }));
+    return data;
+  }, []);
+  const uploadGroupAvatar = useCallback(async (convId, file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const { data } = await api.post(`/groups/${convId}/avatar`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) =>
+        c.id === convId && c.group ? { ...c, group: { ...c.group, avatar_url: data.avatar_url } } : c
+      ),
+    }));
+    return data;
+  }, []);
+  const addGroupMembers = useCallback(async (convId, userIds) => {
+    const { data } = await api.post(`/groups/${convId}/members`, { user_ids: userIds });
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) => (c.id === convId ? { ...c, ...data } : c)),
+    }));
+    return data;
+  }, []);
+  const removeGroupMember = useCallback(async (convId, userId) => {
+    const { data } = await api.delete(`/groups/${convId}/members/${userId}`);
+    if (data?.deleted) {
+      store.set((s) => ({ ...s, conversations: s.conversations.filter((c) => c.id !== convId) }));
+    }
+    return data;
+  }, []);
+  const promoteGroupAdmin = useCallback(async (convId, userId) => {
+    await api.post(`/groups/${convId}/admins/${userId}`);
+    return { ok: true };
+  }, []);
+  const demoteGroupAdmin = useCallback(async (convId, userId) => {
+    await api.delete(`/groups/${convId}/admins/${userId}`);
+    return { ok: true };
+  }, []);
+  const listGroupMembers = useCallback(async (convId) => {
+    const { data } = await api.get(`/groups/${convId}/members`);
+    return data;
+  }, []);
+  const searchInConversation = useCallback(async (convId, q) => {
+    const { data } = await api.get(`/conversations/${convId}/messages/search`, { params: { q } });
+    return data;
+  }, []);
+  const searchMessagesGlobal = useCallback(async (q) => {
+    const { data } = await api.get("/messages/search", { params: { q } });
+    return data;
+  }, []);
+  const starMessage = useCallback(async (messageId, convId) => {
+    await api.post(`/messages/${messageId}/star`);
+    if (convId) {
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) =>
+          m.id === messageId
+            ? { ...m, starred_by: [...(m.starred_by || []), userIdRef.current].filter((v, i, a) => a.indexOf(v) === i) }
+            : m
+        )
+      );
+    }
+  }, [patchMessagesForConv]);
+  const unstarMessage = useCallback(async (messageId, convId) => {
+    await api.delete(`/messages/${messageId}/star`);
+    if (convId) {
+      patchMessagesForConv(convId, (list) =>
+        list.map((m) =>
+          m.id === messageId
+            ? { ...m, starred_by: (m.starred_by || []).filter((u) => u !== userIdRef.current) }
+            : m
+        )
+      );
+    }
+  }, [patchMessagesForConv]);
+  const listStarred = useCallback(async () => {
+    const { data } = await api.get("/messages/starred");
+    return data;
+  }, []);
+
   const setActiveConv = useCallback(async (convId) => {
     activeConvIdRef.current = convId;
     store.set({ activeConvId: convId });
@@ -566,6 +667,17 @@ export const MessengerProvider = ({ children }) => {
           messagesByConv: { ...s.messagesByConv, [conversation_id]: next },
         };
       });
+      return;
+    }
+
+    if (data.type === "conversation_new" || data.type === "group_updated" || data.type === "conversation_removed" || data.type === "conversation_deleted") {
+      fetchConversations().catch(() => {});
+      if (data.type === "conversation_removed" || data.type === "conversation_deleted") {
+        store.set((s) => ({
+          ...s,
+          conversations: s.conversations.filter((c) => c.id !== data.conversation_id),
+        }));
+      }
       return;
     }
 
@@ -780,6 +892,19 @@ export const MessengerProvider = ({ children }) => {
       setReplyTarget,
       setEditTarget,
       clearComposerState,
+      createGroup,
+      updateGroup,
+      uploadGroupAvatar,
+      addGroupMembers,
+      removeGroupMember,
+      promoteGroupAdmin,
+      demoteGroupAdmin,
+      listGroupMembers,
+      searchInConversation,
+      searchMessagesGlobal,
+      starMessage,
+      unstarMessage,
+      listStarred,
     }),
     [
       sendMessage,
@@ -800,6 +925,19 @@ export const MessengerProvider = ({ children }) => {
       setReplyTarget,
       setEditTarget,
       clearComposerState,
+      createGroup,
+      updateGroup,
+      uploadGroupAvatar,
+      addGroupMembers,
+      removeGroupMember,
+      promoteGroupAdmin,
+      demoteGroupAdmin,
+      listGroupMembers,
+      searchInConversation,
+      searchMessagesGlobal,
+      starMessage,
+      unstarMessage,
+      listStarred,
     ]
   );
 

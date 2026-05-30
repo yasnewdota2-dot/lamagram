@@ -67,6 +67,8 @@ const ChatRow = memo(
 
     const title = isSaved
       ? t("savedMessages")
+      : c.kind === "group"
+      ? (c.group?.title || "Group")
       : other?.display_name || other?.username || "Unknown";
 
     const lastMsg = c.last_message;

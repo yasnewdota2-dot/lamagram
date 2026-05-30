@@ -384,6 +384,8 @@ def public_message(m: dict) -> dict:
         "edited": bool(m.get("edited")),
         "edited_at": m.get("edited_at"),
         "deleted_for_everyone": False,
+        "starred_by": m.get("starred_by") or [],
+        "reactions": m.get("reactions") or [],
     }
 
 async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:
@@ -406,10 +408,27 @@ async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:
 
 async def public_conversation(c: dict, me_id: str) -> dict:
     kind = c.get("kind", "dm")
+    group_pub = None
     if kind == "saved":
         me = await db.users.find_one({"_id": me_id})
         other_pub = public_user(me) if me else None
         unread = 0
+    elif kind == "group":
+        other_pub = None
+        unread = await db.messages.count_documents({
+            "conversation_id": c["_id"],
+            "sender_id": {"$ne": me_id},
+            "status": {"$ne": "seen"},
+            "deleted": {"$ne": True},
+        })
+        group_pub = {
+            "title": c.get("title", ""),
+            "avatar_url": c.get("avatar_url"),
+            "description": c.get("description"),
+            "member_count": len(c.get("participants", [])),
+            "is_admin": me_id in (c.get("admins") or []),
+            "created_by": c.get("created_by"),
+        }
     else:
         other_id = next((p for p in c["participants"] if p != me_id), None)
         other = await db.users.find_one({"_id": other_id}) if other_id else None
@@ -427,6 +446,7 @@ async def public_conversation(c: dict, me_id: str) -> dict:
         "kind": kind,
         "participants": c["participants"],
         "other_user": other_pub,
+        "group": group_pub,
         "last_message": c.get("last_message"),
         "last_message_at": c.get("last_message_at"),
         "created_at": c["created_at"],
@@ -628,9 +648,21 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
     out = []
     for c in docs:
         kind = c.get("kind", "dm")
+        group_pub = None
         if kind == "saved":
             other_pub = public_user(me_doc) if me_doc else None
             unread = 0
+        elif kind == "group":
+            other_pub = None
+            group_pub = {
+                "title": c.get("title", ""),
+                "avatar_url": c.get("avatar_url"),
+                "description": c.get("description"),
+                "member_count": len(c.get("participants", [])),
+                "is_admin": me_id in (c.get("admins") or []),
+                "created_by": c.get("created_by"),
+            }
+            unread = unread_by_conv.get(c["_id"], 0)
         else:
             other_id = next((p for p in c.get("participants", []) if p != me_id), None)
             other_doc = users_by_id.get(other_id) if other_id else None
@@ -643,6 +675,7 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
             "kind": kind,
             "participants": c["participants"],
             "other_user": other_pub,
+            "group": group_pub,
             "last_message": c.get("last_message"),
             "last_message_at": c.get("last_message_at"),
             "created_at": c["created_at"],
@@ -749,7 +782,6 @@ async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_
         raise HTTPException(404, "Conversation not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
-    other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
     now = datetime.now(timezone.utc).isoformat()
     targets = await db.messages.find({
         "conversation_id": conv_id,
@@ -771,9 +803,8 @@ async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_
                 "status": "seen",
                 "at": now,
             }
-            await manager.send_to_user(current_user["_id"], payload)
-            if other_id:
-                await manager.send_to_user(other_id, payload)
+            for pid in conv["participants"]:
+                await manager.send_to_user(pid, payload)
     return {"updated": len(targets)}
 
 @api_router.post("/messages/upload")
@@ -1237,6 +1268,314 @@ async def unmute_conversation(conv_id: str, current_user: dict = Depends(get_cur
     return await _toggle_set_field(conv_id, current_user["_id"], "muted_by", add=False)
 
 # ---------------------------------------------------------------------------
+# Phase 5C — Groups, Search, Starred
+# ---------------------------------------------------------------------------
+
+class CreateGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str = Field(..., min_length=3, max_length=50)
+    participant_ids: List[str] = Field(..., min_length=2, max_length=200)
+    description: Optional[str] = Field(None, max_length=200)
+
+class UpdateGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: Optional[str] = Field(None, min_length=3, max_length=50)
+    description: Optional[str] = Field(None, max_length=200)
+
+class AddMembersRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_ids: List[str] = Field(..., min_length=1, max_length=50)
+
+def _require_group_admin(conv: dict, me_id: str):
+    if conv.get("kind") != "group":
+        raise HTTPException(400, "Not a group conversation")
+    if me_id not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+
+async def _broadcast_conv_to_all(conv_id: str, payload: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        return
+    for pid in conv.get("participants", []):
+        await manager.send_to_user(pid, payload)
+
+async def _public_group_members(conv: dict) -> List[dict]:
+    ids = conv.get("participants", [])
+    if not ids:
+        return []
+    users = {u["_id"]: u async for u in db.users.find({"_id": {"$in": ids}})}
+    admins = set(conv.get("admins") or [])
+    out = []
+    for uid in ids:
+        u = users.get(uid)
+        if not u:
+            continue
+        pu = public_user(u)
+        pu["is_admin"] = uid in admins
+        pu["is_online"] = manager.is_online(uid) or bool(u.get("is_online"))
+        out.append(pu)
+    return out
+
+@api_router.post("/groups")
+async def create_group(body: CreateGroupRequest, current_user: dict = Depends(get_current_user)):
+    # Verify all participant users exist and are not the current user
+    p_ids = [uid for uid in dict.fromkeys(body.participant_ids) if uid != current_user["_id"]]
+    if len(p_ids) < 2:
+        raise HTTPException(400, "A group needs at least 2 other members")
+    found = await db.users.find({"_id": {"$in": p_ids}}).to_list(len(p_ids))
+    if len(found) != len(p_ids):
+        raise HTTPException(400, "One or more participant_ids not found")
+    participants = [current_user["_id"], *p_ids]
+    now = datetime.now(timezone.utc).isoformat()
+    conv = {
+        "_id": str(uuid.uuid4()),
+        "kind": "group",
+        "participants": participants,
+        "admins": [current_user["_id"]],
+        "title": body.title.strip(),
+        "description": (body.description or "").strip() or None,
+        "avatar_url": None,
+        "created_by": current_user["_id"],
+        "created_at": now,
+        "last_message": None,
+        "last_message_at": None,
+        "pinned_by": [],
+        "muted_by": [],
+    }
+    await db.conversations.insert_one(conv)
+    pub = await public_conversation(conv, current_user["_id"])
+    for pid in participants:
+        await manager.send_to_user(pid, {"type": "conversation_new", "conversation": pub if pid == current_user["_id"] else None, "conversation_id": conv["_id"]})
+    return pub
+
+@api_router.patch("/groups/{conv_id}")
+async def update_group(conv_id: str, body: UpdateGroupRequest, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Group not found")
+    _require_group_admin(conv, current_user["_id"])
+    patch = {}
+    if body.title is not None:
+        patch["title"] = body.title.strip()
+    if body.description is not None:
+        patch["description"] = body.description.strip() or None
+    if patch:
+        await db.conversations.update_one({"_id": conv_id}, {"$set": patch})
+    updated = await db.conversations.find_one({"_id": conv_id})
+    await _broadcast_conv_to_all(conv_id, {"type": "group_updated", "conversation_id": conv_id})
+    return await public_conversation(updated, current_user["_id"])
+
+@api_router.post("/groups/{conv_id}/avatar")
+async def upload_group_avatar(conv_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Group not found")
+    _require_group_admin(conv, current_user["_id"])
+    if not file.content_type or file.content_type.split("/")[0] != "image":
+        raise HTTPException(400, "Avatar must be an image")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Avatar too large (max 5MB)")
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+    fname = f"group_{conv_id}_{uuid.uuid4().hex}.{ext}"
+    avatar_dir = UPLOAD_DIR / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    fpath = avatar_dir / fname
+    with open(fpath, "wb") as f:
+        f.write(contents)
+    url = f"/api/uploads/avatars/{fname}"
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"avatar_url": url}})
+    await _broadcast_conv_to_all(conv_id, {"type": "group_updated", "conversation_id": conv_id})
+    return {"avatar_url": url}
+
+@api_router.post("/groups/{conv_id}/members")
+async def add_group_members(conv_id: str, body: AddMembersRequest, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Group not found")
+    _require_group_admin(conv, current_user["_id"])
+    new_ids = [uid for uid in dict.fromkeys(body.user_ids) if uid not in conv["participants"]]
+    if not new_ids:
+        return await public_conversation(conv, current_user["_id"])
+    found = await db.users.find({"_id": {"$in": new_ids}}).to_list(len(new_ids))
+    if len(found) != len(new_ids):
+        raise HTTPException(400, "One or more user_ids not found")
+    await db.conversations.update_one({"_id": conv_id}, {"$addToSet": {"participants": {"$each": new_ids}}})
+    updated = await db.conversations.find_one({"_id": conv_id})
+    for pid in updated["participants"]:
+        await manager.send_to_user(pid, {"type": "group_updated", "conversation_id": conv_id})
+    return await public_conversation(updated, current_user["_id"])
+
+@api_router.delete("/groups/{conv_id}/members/{user_id}")
+async def remove_group_member(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "group":
+        raise HTTPException(404, "Group not found")
+    me_id = current_user["_id"]
+    if user_id not in conv["participants"]:
+        raise HTTPException(404, "Member not in group")
+    is_self = user_id == me_id
+    is_admin = me_id in (conv.get("admins") or [])
+    if not is_self and not is_admin:
+        raise HTTPException(403, "Admin only")
+    admins = list(conv.get("admins") or [])
+    participants = list(conv["participants"])
+    if is_self and user_id in admins and len(admins) == 1 and len(participants) > 1:
+        raise HTTPException(400, "Promote another admin first")
+    participants.remove(user_id)
+    if user_id in admins:
+        admins.remove(user_id)
+    if not participants:
+        # Auto-delete empty group
+        await db.conversations.delete_one({"_id": conv_id})
+        await manager.send_to_user(me_id, {"type": "conversation_deleted", "conversation_id": conv_id})
+        return {"ok": True, "deleted": True}
+    if not admins:
+        # Promote first remaining participant
+        admins.append(participants[0])
+    await db.conversations.update_one(
+        {"_id": conv_id},
+        {"$set": {"participants": participants, "admins": admins}},
+    )
+    # Notify removed user + remaining
+    await manager.send_to_user(user_id, {"type": "conversation_removed", "conversation_id": conv_id})
+    for pid in participants:
+        await manager.send_to_user(pid, {"type": "group_updated", "conversation_id": conv_id})
+    return {"ok": True, "deleted": False}
+
+@api_router.post("/groups/{conv_id}/admins/{user_id}")
+async def promote_admin(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Group not found")
+    _require_group_admin(conv, current_user["_id"])
+    if user_id not in conv["participants"]:
+        raise HTTPException(400, "User is not a member")
+    await db.conversations.update_one({"_id": conv_id}, {"$addToSet": {"admins": user_id}})
+    await _broadcast_conv_to_all(conv_id, {"type": "group_updated", "conversation_id": conv_id})
+    return {"ok": True}
+
+@api_router.delete("/groups/{conv_id}/admins/{user_id}")
+async def demote_admin(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Group not found")
+    _require_group_admin(conv, current_user["_id"])
+    admins = conv.get("admins") or []
+    if user_id == current_user["_id"] and len(admins) == 1:
+        raise HTTPException(400, "Cannot demote yourself as the only admin")
+    if user_id not in admins:
+        return {"ok": True}
+    await db.conversations.update_one({"_id": conv_id}, {"$pull": {"admins": user_id}})
+    await _broadcast_conv_to_all(conv_id, {"type": "group_updated", "conversation_id": conv_id})
+    return {"ok": True}
+
+@api_router.get("/groups/{conv_id}/members")
+async def list_group_members(conv_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "group":
+        raise HTTPException(404, "Group not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    return await _public_group_members(conv)
+
+# --- Search ---
+
+@api_router.get("/conversations/{conv_id}/messages/search")
+async def search_in_conversation(
+    conv_id: str,
+    q: str,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(int(limit), 100))
+    cur = db.messages.find({
+        "conversation_id": conv_id,
+        "type": "text",
+        "deleted_for_everyone": {"$ne": True},
+        "deleted_for": {"$ne": current_user["_id"]},
+        "text": {"$regex": re.escape(q), "$options": "i"},
+    }).sort("created_at", -1).limit(limit)
+    docs = await cur.to_list(limit)
+    return [public_message(m) for m in docs]
+
+@api_router.get("/messages/search")
+async def search_messages_global(
+    q: str,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(int(limit), 100))
+    convs = await db.conversations.find(
+        {"participants": current_user["_id"]}, {"_id": 1, "kind": 1, "title": 1, "participants": 1}
+    ).to_list(1000)
+    if not convs:
+        return []
+    conv_ids = [c["_id"] for c in convs]
+    cur = db.messages.find({
+        "conversation_id": {"$in": conv_ids},
+        "type": "text",
+        "deleted_for_everyone": {"$ne": True},
+        "deleted_for": {"$ne": current_user["_id"]},
+        "text": {"$regex": re.escape(q), "$options": "i"},
+    }).sort("created_at", -1).limit(limit)
+    docs = await cur.to_list(limit)
+    return [public_message(m) for m in docs]
+
+# --- Starred ---
+
+@api_router.post("/messages/{message_id}/star")
+async def star_message(message_id: str, current_user: dict = Depends(get_current_user)):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    if msg.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot star a deleted message")
+    conv = await db.conversations.find_one({"_id": msg["conversation_id"]})
+    if not conv or current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    await db.messages.update_one({"_id": message_id}, {"$addToSet": {"starred_by": current_user["_id"]}})
+    return {"ok": True, "starred": True}
+
+@api_router.delete("/messages/{message_id}/star")
+async def unstar_message(message_id: str, current_user: dict = Depends(get_current_user)):
+    await db.messages.update_one({"_id": message_id}, {"$pull": {"starred_by": current_user["_id"]}})
+    return {"ok": True, "starred": False}
+
+@api_router.get("/messages/starred")
+async def list_starred(
+    limit: int = 50,
+    before: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    limit = max(1, min(int(limit), 100))
+    query = {
+        "starred_by": current_user["_id"],
+        "deleted_for_everyone": {"$ne": True},
+        "deleted_for": {"$ne": current_user["_id"]},
+    }
+    if before:
+        b = await db.messages.find_one({"_id": before})
+        if b:
+            query["created_at"] = {"$lt": b["created_at"]}
+    cur = db.messages.find(query).sort("created_at", -1).limit(limit)
+    docs = await cur.to_list(limit)
+    return [public_message(m) for m in docs]
+
+# ---------------------------------------------------------------------------
 # WebSocket — /api/ws
 # ---------------------------------------------------------------------------
 @api_router.websocket("/ws")
@@ -1500,6 +1839,14 @@ async def on_startup():
     )
     if conv_backfill.modified_count:
         logger.info(f"Migration (Phase 5B): backfilled {conv_backfill.modified_count} conversation rows")
+
+    # Phase 5C migration — starred_by + reactions on messages
+    p5c_msg = await db.messages.update_many(
+        {"starred_by": {"$exists": False}},
+        {"$set": {"starred_by": [], "reactions": []}},
+    )
+    if p5c_msg.modified_count:
+        logger.info(f"Migration (Phase 5C): backfilled {p5c_msg.modified_count} messages with starred_by/reactions")
 
 @app.on_event("shutdown")
 async def on_shutdown():

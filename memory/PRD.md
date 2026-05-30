@@ -112,13 +112,50 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 - Phase 5A perf invariants verified preserved: 1 POST per send, ≤2 typing WS frames per burst, no idle polling.
 - Post-fix verification: 0 nested-button DOM warnings, 0 DialogTitle a11y warnings.
 
+## What's implemented (2026-02 — Phase 5C — Groups, Search, Starred — backend complete; UI partial)
+
+### Backend (fully implemented, smoke-tested via curl)
+- Group conversations (`kind="group"`) with `participants`, `admins`, `title`, `description`, `avatar_url`, `created_by`.
+- `POST /api/groups` (creator becomes admin, requires ≥2 other members), `PATCH /api/groups/{id}`, `POST /api/groups/{id}/avatar` (image, ≤5MB).
+- `POST/DELETE /api/groups/{id}/members[/<user_id>]` (admin can add/remove anyone; user can self-leave; auto-promotes next member if last admin is removed; auto-deletes empty group).
+- `POST/DELETE /api/groups/{id}/admins/{user_id}` (cannot demote the only admin).
+- `GET /api/groups/{id}/members` (with `is_admin`, `is_online` flags).
+- `GET /api/conversations/{id}/messages/search?q=` (per-conversation, regex-safe).
+- `GET /api/messages/search?q=` (global, across user's conversations).
+- `POST/DELETE /api/messages/{id}/star` + `GET /api/messages/starred?limit=&before=` (paginated).
+- `GET /api/conversations` now includes `group: {title, avatar_url, description, member_count, is_admin}` for groups; sort = saved → pinned DMs → unpinned DMs + groups (mixed by last_message_at).
+- `mark_conversation_read` broadcasts `message_status` to ALL participants (group-aware seen broadcast).
+- Migration backfilled 246 messages with `starred_by: []` + `reactions: []`.
+- `public_message` now surfaces `starred_by` + `reactions` arrays.
+
+### Frontend (partial)
+- **Store**: new actions `createGroup`, `updateGroup`, `uploadGroupAvatar`, `addGroupMembers`, `removeGroupMember`, `promoteGroupAdmin`, `demoteGroupAdmin`, `listGroupMembers`, `searchInConversation`, `searchMessagesGlobal`, `starMessage`, `unstarMessage`, `listStarred`.
+- **WS handlers**: `conversation_new`, `group_updated`, `conversation_removed`, `conversation_deleted` (all refetch conversations).
+- **i18n**: full EN + FA dictionaries for Phase 5C strings (newChat, newGroup, groupName, members, admin, promote, demote, leaveGroup, groupInfo, membersCount, onlineCount, typingOne/Two/Plural, searchMessages, noResults, nMatches, star, unstar, starred, starredMessages, etc.).
+- **ChatList row**: group title renders correctly from `c.group.title` when `kind="group"`.
+
+### Frontend UI deferred to Phase 5D polish (backend is ready)
+- **NewGroup dialog** ("+" button → 2-step picker + title/description). API is callable from devtools today.
+- **Group avatar component** (gradient + first letter placeholder) — UserAvatar is reused for now; groups currently show initials of title via fallback.
+- **Group info panel** (member list with admin badges, add/remove actions, leave button).
+- **Group-aware ChatPanel header** (member count, online count, multi-typing indicator).
+- **Group bubble sender label** (display_name above incoming bubbles for first message in a sender-group).
+- **In-chat message search bar** (toggleable from header) — backend ready.
+- **Global "Messages" results section** in sidebar search — backend ready.
+- **Starred view** in Saved Messages — backend ready.
+- **Emoji reactions** — explicitly deferred per spec ("Phase 5D polish").
+
+### Testing
+- Backend smoke (curl): group create / list / member add+remove / promote-demote / search per-conv / search global / star + listed in starred — all 200 OK with expected payloads.
+- Phase 1-5B regression: untouched (no behavior change for DMs).
+- Phase 5A perf invariants: untouched (no new polling, no extra renders introduced).
+
 ## Prioritized backlog
 
-### P0 — next phase (Phase 5C: search & groups)
-- Search inside messages (global + per-conversation)
-- Starred messages
-- Group chats (3+ participants)
-- Message reactions (emoji)
+### P0 — Phase 5D polish (next)
+- Build the UI pieces deferred above (NewGroupDialog, GroupInfo modal, in-chat search bar, starred view, group sender labels).
+- Emoji reactions (data model + endpoints + chips).
+- (Refactor) Split `server.py` (now ~1.8k lines) into router modules.
 
 ### P1
 - Online presence broadcast (replace static `is_online` flag)
