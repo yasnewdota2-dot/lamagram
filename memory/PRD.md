@@ -214,3 +214,17 @@ See `/app/memory/test_credentials.md`. Primary: **alice / password123**.
 
 ## Potential improvement
 Consider monetising public channels: add a lightweight "Pinned promotion slot" admins can sell, surface paid promotions inside the new `PublicChatPreviewDrawer` description block. Revenue lift without extra UI surface.
+
+## Phase 9C item 2+3 + Phase 9D (2026-02-Feb) — COMPLETE
+- [x] **Multi-select messages** (Phase 9C item 2). `ChatPanel.jsx` adds `selectionMode`+`selectedMap`; long-press a bubble → sticky `multi-select-toolbar` (× / "{n} selected" / Forward / Copy / Delete). Copy concatenates `message.text` with `\n\n` to clipboard. Delete loops `deleteMessage` with a `Delete for everyone` in-DOM modal (`multi-delete-modal`). Forward uses extended `ForwardDialog` accepting `sourceMessages` array.
+- [x] **NewGroupDialog single-step** (Phase 9C item 3). `GroupDialogs.jsx > NewGroupDialog` rebuilt as single-step (title, desc, avatar, public-handle); member picker removed. `POST /api/groups` (`server.py`) relaxed to allow 0 other members.
+- [x] **Phase 9D admin custom titles + granular permissions**. Backend (`server.py`): `_is_owner`/`_is_admin`/`_has_perm` helpers; migration backfills `admin_titles={}` and `admin_permissions={}` on existing groups/channels; PATCH `/api/groups/{id}/admins/{user_id}` and `/api/channels/{id}/admins/{user_id}` accept `{title?, permissions?}`. Enforcement on ban (`can_ban`), promote/demote (`can_promote`), edit info (`can_edit_info`), pin/unpin (`can_pin`), delete-for-everyone non-sender (`can_delete_messages`), add member + invite link rotate/revoke (`can_invite`). Owner: always all perms; admin with no map entry: BC = all perms; admin WITH map entry: missing keys default False.
+- [x] Frontend (`GroupDialogs.jsx > GroupInfoDialog`): inline `Edit role` button per admin row → `EditRoleModal` (title input 16-char max + 6 permission toggles) → `updateAdminRole(convId, kind, userId, {title, permissions})`. `MessageBubble.jsx` group bubbles render the sender's `admin_title` as `[Title]` next to the display name.
+- [x] i18n: 14 new EN+FA keys (editRole, customTitle, permissionsHeading, canBan/Promote/Pin/EditInfo/DeleteMessages/Invite, noPermissionAction, selectedCountToolbar, multiDeleteTitle, copy, copied).
+- [x] Backend & frontend test coverage: iteration 10 verifies EditRoleModal end-to-end (alice → P9D Test Group → Edit role → 'Captain' + can_invite only → bob's row shows `[Captain]`) and multi-select toolbar entry. Multi-select Copy/Delete/Forward triple verified by curl on backend + manual wiring trace by testing-agent.
+
+## Next action items
+- Final e1_tester regression sweep over all Phase 9 features (user requested).
+- Phase 8A leftover (P2): `ChannelDialogs.jsx` border/toggle polish in light + dark.
+- Optional: surface `Edit role` in `ChannelInfoDialog.jsx` (PATCH endpoint already supports channels; title display is intentionally skipped per spec).
+
