@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Settings as SettingsIcon, Search, X, Plus, MessageSquare, Users, Megaphone, LinkIcon } from "lucide-react";
@@ -20,6 +20,7 @@ import { NewGroupDialog } from "../components/Messenger/GroupDialogs";
 import { NewChannelDialog } from "../components/Messenger/NewChannelDialog";
 import { JoinDialog } from "../components/Messenger/JoinDialog";
 import { useConversations, useActiveConvId } from "../lib/messenger";
+import { useIsMobile } from "../lib/useIsMobile";
 
 export default function Home() {
   const { user } = useAuth();
@@ -27,6 +28,30 @@ export default function Home() {
   const { openOrCreateConversation, setActiveConv } = useMessengerActions();
   const conversations = useConversations();
   const activeConvId = useActiveConvId();
+  const isMobile = useIsMobile();
+  const { setActiveConv: setActiveConvFromHome } = { setActiveConv };
+
+  // History integration: push a state when entering a conv, listen for popstate to leave
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeConvId) {
+      const cur = window.history.state;
+      if (!cur || cur.convId !== activeConvId) {
+        window.history.pushState({ convId: activeConvId }, "", window.location.pathname + window.location.search);
+      }
+    }
+  }, [activeConvId]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = (e) => {
+      const st = e.state;
+      if (!st || !st.convId) {
+        try { setActiveConvFromHome(null); } catch {}
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [setActiveConvFromHome]);
   const [query, setQuery] = useState("");
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
@@ -45,13 +70,13 @@ export default function Home() {
       <GlassBackground />
 
       <div className="relative z-10 mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 lg:py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4 lg:gap-6 h-[calc(100vh-2rem)] lg:h-[calc(100vh-3rem)]">
+        <div className={`grid gap-4 lg:gap-6 h-[calc(100vh-1rem)] lg:h-[calc(100vh-3rem)] ${isMobile ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-[360px_1fr]"}`}>
           {/* Sidebar */}
           <motion.aside
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className="gm-glass rounded-3xl p-4 flex flex-col min-h-0"
+            className={`gm-glass rounded-3xl p-4 flex flex-col min-h-0 ${isMobile && activeConvId ? "hidden" : ""}`}
             data-testid="sidebar"
           >
             {/* Profile pill */}
@@ -165,7 +190,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: "easeOut", delay: 0.05 }}
-            className="gm-glass rounded-3xl overflow-hidden flex flex-col min-h-0"
+            className={`gm-glass rounded-3xl overflow-hidden flex flex-col min-h-0 ${isMobile && !activeConvId ? "hidden" : ""}`}
             data-testid="chat-area"
           >
             <ChatPanel conversation={activeConv} />

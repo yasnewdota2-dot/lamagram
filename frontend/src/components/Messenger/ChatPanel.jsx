@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon } from "lucide-react";
+import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon, ArrowLeft } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -19,6 +19,7 @@ import { Lightbox } from "./Lightbox";
 import { ForwardDialog } from "./ForwardDialog";
 import { GroupInfoDialog } from "./GroupDialogs";
 import { ChannelInfoDialog } from "./ChannelInfoDialog";
+import { useIsMobile } from "../../lib/useIsMobile";
 import { GroupAvatar } from "./GroupAvatar";
 import { StarredView } from "./StarredView";
 import { ChatSearchBar } from "./ChatSearchBar";
@@ -60,6 +61,7 @@ export const ChatPanel = ({ conversation }) => {
   const { uploadMedia } = useMessengerActions();
   const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
   const { setActiveConv, loadGroupMembers } = useMessengerActions();
+  const isMobile = useIsMobile();
   const convId = conversation?.id;
   const messages = useMessagesForConv(convId);
   const typingMap = useTypingForConv(convId);
@@ -237,6 +239,16 @@ export const ChatPanel = ({ conversation }) => {
               <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
             </span>
           </div>
+        )}
+        {isMobile && (
+          <button
+            onClick={() => { try { window.history.length > 1 ? window.history.back() : setActiveConv(null); } catch { setActiveConv(null); } }}
+            className="p-2 -ml-1 mr-1 rounded-xl text-white/80 hover:bg-white/10 active:scale-95 transition min-w-[44px] min-h-[44px] flex items-center justify-center"
+            aria-label={t("back")}
+            data-testid="chat-header-back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
         )}
         <div
           className={`min-w-0 flex-1 ${(isGroup || isChannel) ? "cursor-pointer" : ""}`}
