@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut } from "lucide-react";
+import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { useI18n } from "../../lib/i18n";
 import { InviteLinkSection, PublicHandleSection } from "./InfoSections";
@@ -7,6 +7,9 @@ import { useAuth } from "../../lib/auth";
 import { useMessengerActions } from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
 import { GroupAvatar } from "./GroupAvatar";
+import { api } from "../../lib/api";
+
+const NEW_GROUP_HANDLE_RE = /^[a-z0-9_]{3,32}$/;
 
 /* ---------- NewGroupDialog ---------- */
 export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
@@ -23,14 +26,37 @@ export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
+  const [isPublic, setIsPublic] = useState(false);
+  const [handleField, setHandleField] = useState("");
+  const [handleStatus, setHandleStatus] = useState("idle"); // idle|checking|available|taken|invalid
+  const handleDeb = useRef(null);
   const tmr = useRef(null);
 
   useEffect(() => {
     if (!open) {
       setStep(1); setQuery(""); setResults([]); setSelected([]);
       setTitle(""); setDesc(""); setAvatarFile(null); setAvatarPreview(null); setErr("");
+      setIsPublic(false); setHandleField(""); setHandleStatus("idle");
     }
   }, [open]);
+
+  // Handle availability debounce (Chunk 6)
+  useEffect(() => {
+    if (!isPublic || !handleField) { setHandleStatus("idle"); return; }
+    if (!NEW_GROUP_HANDLE_RE.test(handleField)) { setHandleStatus("invalid"); return; }
+    setHandleStatus("checking");
+    clearTimeout(handleDeb.current);
+    handleDeb.current = setTimeout(async () => {
+      try {
+        try { await api.get(`/conversations/by-handle/${handleField}`); setHandleStatus("taken"); return; }
+        catch (e) { if (e?.response?.status !== 404) throw e; }
+        try { await api.get(`/users/by-username/${handleField}`); setHandleStatus("taken"); return; }
+        catch (e) { if (e?.response?.status !== 404) throw e; }
+        setHandleStatus("available");
+      } catch { setHandleStatus("idle"); }
+    }, 350);
+    return () => clearTimeout(handleDeb.current);
+  }, [isPublic, handleField]);
 
   useEffect(() => {
     if (tmr.current) clearTimeout(tmr.current);
@@ -58,14 +84,17 @@ export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
 
   const handleCreate = async () => {
     if (title.trim().length < 3 || selected.length < 2 || submitting) return;
+    if (isPublic && handleStatus !== "available") return;
     setSubmitting(true);
     setErr("");
     try {
-      const conv = await createGroup({
+      const body = {
         title: title.trim(),
         description: desc.trim() || undefined,
         participant_ids: selected.map((s) => s.id),
-      });
+      };
+      if (isPublic) { body.is_public = true; body.handle = handleField; }
+      const conv = await createGroup(body);
       if (avatarFile) {
         try { await uploadGroupAvatar(conv.id, avatarFile); } catch { /* ignore */ }
       }
@@ -193,6 +222,39 @@ export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
                 />
               </div>
             </div>
+            {/* Chunk 6: public toggle + handle */}
+            <div className="px-5 pb-2" data-testid="new-group-public-row">
+              <label className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <span className="text-sm text-white/85">{t("makeGroupPublic") || t("makePublic")}</span>
+                <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="w-4 h-4 accent-[#3B9EFF]" data-testid="new-group-public-checkbox" />
+              </label>
+              {isPublic && (
+                <div className="mt-2" data-testid="new-group-handle-row">
+                  <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-2 py-1.5">
+                    <span className="text-[#9ABEFF] text-sm">@</span>
+                    <input
+                      type="text"
+                      value={handleField}
+                      onChange={(e) => setHandleField(e.target.value.toLowerCase())}
+                      maxLength={32}
+                      spellCheck={false}
+                      autoComplete="off"
+                      placeholder={t("publicHandle")}
+                      className="flex-1 bg-transparent text-sm text-white outline-none"
+                      data-testid="new-group-handle-input"
+                    />
+                    {handleStatus === "checking" && <Loader2 className="w-3.5 h-3.5 text-white/50 animate-spin" />}
+                    {handleStatus === "available" && <Check className="w-3.5 h-3.5 text-emerald-300" data-testid="new-group-handle-ok" />}
+                    {handleStatus === "taken" && <X className="w-3.5 h-3.5 text-red-300" data-testid="new-group-handle-taken" />}
+                  </div>
+                  <div className="mt-1 text-[11px]" data-testid="new-group-handle-status">
+                    {handleStatus === "available" && <span className="text-emerald-300">{t("handleAvailable")}</span>}
+                    {handleStatus === "taken" && <span className="text-red-300">{t("handleTaken")}</span>}
+                    {handleStatus === "invalid" && <span className="text-amber-300">{t("handleInvalid")}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
             {err && <div className="px-5 pb-2 text-xs text-red-300" data-testid="new-group-error">{err}</div>}
             <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
               <button onClick={() => setStep(1)} className="px-3 py-1.5 rounded-lg text-xs text-white/70 hover:bg-white/5">
@@ -200,7 +262,7 @@ export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
               </button>
               <button
                 onClick={handleCreate}
-                disabled={title.trim().length < 3 || submitting}
+                disabled={title.trim().length < 3 || submitting || (isPublic && handleStatus !== "available")}
                 className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40"
                 style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)" }}
                 data-testid="new-group-create"
