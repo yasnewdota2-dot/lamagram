@@ -1,0 +1,43 @@
+{
+  "summary": "Glass Messenger Phase 2 (real-time 1:1 chat) end-to-end testing. Backend: 25/25 pytest checks pass — /users/search (auth+self-exclusion), GET /users/{id}, POST /conversations idempotency + self/404 rejects, GET /conversations (sorted desc, populated other_user/unread/last_message), GET messages (order+before pagination+403), POST message (sent vs delivered status, last_message update, empty/403 reject), POST /read (marks seen+returns count), WebSocket /api/ws (ready frame, ping->pong, typing relay between participants only, message_new broadcast to both parties when REST POST happens while WS-connected, bad-token rejection), 2 seeded conversations alice<->bob (4 msgs) and alice<->charlie (2 msgs) all status=seen, openapi.json contains all 5 new chat paths, Phase 1 regression (health/login/auth-me) still green. Frontend (Playwright as alice): login redirect works, sidebar shows both seeded conversations (chat-list-item-bob, chat-list-item-charlie) with display name + last-msg preview + timestamps, clicking bob opens ChatPanel with header avatar+name+presence ('last seen 1m ago'), message thread shows mine right-aligned gradient bubbles vs theirs left-aligned glass bubbles, composer fills + Send button posts message (sidebar updates to 'You: TEST_e2e_575493' confirming POST+last_message), ticks rendered via data-testid (tick-delivered, tick-seen visible), debounced search 'bob' shows search-result-bob and clicking re-opens same convo (idempotent), WebSocket auto-connects on auth (wss://.../api/ws?token=... confirmed in network), real-time receipt visually confirmed (TEST_ws_* messages from concurrent backend WS test appeared inline in alice's thread). Visual design holds up — dark glassmorphism, gradient bubbles, blur panels, online dots, contrast all readable.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/conversations/{id}/messages", "issue": "Empty/whitespace-only payloads return 422 (Pydantic ValidationError) instead of 400 — acceptable but inconsistent with the 400s used elsewhere for business validation."},
+      {"endpoint": "WebSocket /api/ws", "issue": "No server-side ping timeout / idle disconnect. A stale client that never pings stays in ConnectionManager forever (until socket TCP RST). For production add an asyncio.wait_for on receive or a periodic server-side ping."},
+      {"endpoint": "GET /api/conversations", "issue": "Sorts in Python after fetching all participants' convs (to_list(500)) — fine for now but won't scale past a few hundred convos/user. Add Mongo-side sort+skip+limit."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ChatPanel", "issues": ["Excellent dark glass design — mine bubbles gradient blue/purple, theirs neutral glass with subtle border, header avatar with online dot, presence text muted but readable. No contrast or alignment issues at 1440x900."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_glass_messenger_phase2.py",
+    "/app/backend/tests/test_glass_messenger.py",
+    "/app/test_reports/pytest/pytest_phase2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 750 lines (auth+users+chat+ws+seed). Still acceptable, but a refactor into routers/ (auth.py, users.py, chat.py, ws.py) + seed.py is overdue before Phase 3 to keep files <700.",
+    "ConnectionManager stores WebSocket refs in-process. Will not work behind multiple uvicorn workers / k8s replicas — broadcasts won't reach connections on other pods. For multi-replica, add Redis pub/sub (or sticky sessions + a shared bus).",
+    "websocket_endpoint: on deliver-on-connect, the message_status events are sent to both `user_id` and `m['sender_id']`. If a third participant ever exists, the broadcast misses them — but since conversations are 1:1 only it's fine. Add a comment / assert participants==2 if it stays 1:1.",
+    "search_users: regex prefix uses re.escape(q.lower()) + ^ anchor — good. The display_name search is case-insensitive substring, which is fine but may scan whole collection. Add a text index on (username, display_name) before launch.",
+    "broadcast_presence sends to *all* partner ids on every connect/disconnect — O(N) DB query for partners then O(M) WS sends. Cheap today but consider debouncing rapid reconnects.",
+    "Last_message embedded denormalized in conversation doc is the right call (no extra query on list). Just remember to update it on message edit/delete in Phase 3.",
+    "Race condition: when alice marks-read & bob's WS is concurrently being marked-delivered on connect for the same message, the seen update could lose to delivered update depending on ordering. Tiny window; consider a single conditional update."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_glass_messenger_phase2.py"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% on visually verified flows"},
+  "test_credentials": "alice/password123, bob/password123, charlie/password123 (seed users; /app/memory/test_credentials.md).",
+  "seed_data_creation": "Tests POST messages prefixed with TEST_ into seeded alice<->bob conversation. Not auto-cleaned (harmless). Seed conversations re-created automatically on first boot if conversations collection is empty.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2 test file: /app/backend/tests/test_glass_messenger_phase2.py (25 tests). WebSocket endpoint at wss://<host>/api/ws?token=<jwt>; server sends {type:'ready'} on connect, supports ping/pong, typing relay (conversation_id+is_typing), presence broadcast on connect/disconnect, message_new on POST, message_status on delivery+seen. Seeded conversations: alice<->bob (4 msgs), alice<->charlie (2 msgs). Frontend dispatches WS connection automatically when MessengerProvider mounts (RequireAuth wrapper). For multi-user realtime testing in Playwright, use REST POST with bob's bearer token to simulate the other party — confirmed working. Note: urllib in playwright sandbox sometimes gets 403 from preview proxy due to missing User-Agent; use requests with default UA instead if extending.",
+  "rca of the issue": "No app bugs encountered. Two Playwright script-level non-issues: (1) page.evaluate(innerText.includes(...)) right after a click can race the React render — visually confirmed the message DID appear (sidebar showed 'You: TEST_e2e_575493'). (2) urllib HTTP 403 from preview edge — needs a User-Agent header or use the requests library."
+}

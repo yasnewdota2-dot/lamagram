@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./lib/auth";
 import { I18nProvider } from "./lib/i18n";
+import { MessengerProvider } from "./lib/messenger";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -20,7 +21,7 @@ const RequireAuth = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <Loader />;
   if (!user) return <Navigate to="/login" replace />;
-  return children;
+  return <MessengerProvider>{children}</MessengerProvider>;
 };
 
 function App() {
