@@ -87,10 +87,18 @@ const ChatRow = memo(
     const testIdSlug = isSaved ? "saved" : other?.username || c.id;
 
     return (
-      <motion.button
+      <motion.div
         whileTap={{ scale: 0.99 }}
         onClick={() => setActiveConv(c.id)}
-        className="group text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setActiveConv(c.id);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40"
         style={
           isActive
             ? {
@@ -244,7 +252,7 @@ const ChatRow = memo(
             </DropdownMenu>
           </div>
         )}
-      </motion.button>
+      </motion.div>
     );
   },
   (prev, next) => {

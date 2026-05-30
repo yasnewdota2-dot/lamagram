@@ -84,13 +84,41 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 - [x] i18n EN+FA additions: savedMessages, savedSubtitle, pinned, searchPlaceholder2, searchingUsernames, usernameCopied. FA: 'پیام‌های ذخیره‌شده', 'فضای ابری شخصی شما', 'جستجوی یوزرنیم', 'یوزرنیم کپی شد'.
 - [x] 10 new Phase 4 backend tests + 72/72 full regression pass; frontend Playwright verified saved-first ordering, header copy, message persist, FA RTL toggle, clipboard write of @username, '· @username' DM header suffix.
 
+## What's implemented (2026-02 — Phase 5B — Reply / Forward / Edit / Delete / Pin / Mute)
+
+### Backend
+- [x] `PATCH /api/messages/{id}` — sender-only, text-only, 48h window. Sets `edited=true`, `edited_at`. Broadcasts `message_edited` to participants.
+- [x] `DELETE /api/messages/{id}?scope=me|all`. scope=me adds user to `deleted_for`; scope=all (sender within 24h) clears text/media, sets `deleted_for_everyone=true`, deletes media file from disk (best-effort), broadcasts `message_deleted`.
+- [x] `POST /api/messages/{id}/forward` `{conversation_ids: [...]}` — copies type/text/media (no media re-upload), sets `forwarded_from`, returns created messages; broadcasts `message_new` per target.
+- [x] `POST/DELETE /api/conversations/{id}/pin` — toggle pin. Enforces cap=5 pinned DMs per user (saved excluded).
+- [x] `POST/DELETE /api/conversations/{id}/mute` — toggle mute.
+- [x] `POST /api/conversations/{id}/messages` and `POST /api/messages/upload` accept optional `reply_to_message_id` → server validates & writes `reply_to` snapshot {message_id, sender_id, type, text_preview, file_name?}.
+- [x] `GET /api/conversations` now includes `is_pinned` and `is_muted` per current user; sort = `saved + pinned_dm (last_message_at desc) + unpinned_dm (last_message_at desc)`.
+- [x] `GET /api/conversations/{id}/messages` excludes messages where `me in deleted_for`; returns tombstone shape `(text='', media=null, deleted_for_everyone=true)` for globally-deleted.
+- [x] Startup migration backfills new fields on existing messages + conversations.
+
+### Frontend
+- [x] `MessageBubble`: hover ⋯ → DropdownMenu with Reply / Forward / Copy / Edit (sender within 48h text only) / Delete (sub-menu: Delete for me / Delete for everyone within 24h). Renders ReplyQuote (clickable, scrolls to & highlights original), ForwardedHeader, "edited" suffix, tombstone bubble.
+- [x] `Composer`: reply/edit strips with cancel; submit handles send & save with `sending` + `sendLockRef` (Phase 5A invariant preserved). Reply optimistic snapshot included so quote renders instantly.
+- [x] `ForwardDialog`: shadcn `Dialog` with `DialogTitle`/`DialogDescription` (no a11y warnings), multi-select up to 10, conversation list + debounced user search, success toast with localized "Forwarded to N chats".
+- [x] `ChatList` row: Pin icon when pinned, BellOff icon when muted, gray unread badge when muted; hover ⋯ → DropdownMenu with Pin to top / Unpin, Mute / Unmute, Mark as read. Pin cap surfaces error inline.
+- [x] Row is now `motion.div role="button" tabIndex=0` with `Enter`/`Space` handling — no nested-button DOM warnings.
+- [x] WS handlers: `message_edited`, `message_deleted`, `conversation_updated`. Muted convs excluded from `document.title` unread count.
+- [x] i18n EN+FA: reply, forward, copyText, edit, deleteMsg, deleteForMe, deleteForEveryone, edited, replyingTo, editing, forwardTo, send, forwardedFrom, forwardedToN, pinToTop, unpin, muteNotifications, unmute, markAsRead, upToFivePinned, messageWasDeleted, messageNotInView, confirmDeleteAll.
+
+### Testing
+- 15/15 Phase 5B backend tests PASS; 96/99 full regression (3 failures are pre-existing Phase 2 seed-sort brittleness, not 5B regressions).
+- 100% Phase 5B frontend Playwright interactions PASS.
+- Phase 5A perf invariants verified preserved: 1 POST per send, ≤2 typing WS frames per burst, no idle polling.
+- Post-fix verification: 0 nested-button DOM warnings, 0 DialogTitle a11y warnings.
+
 ## Prioritized backlog
 
-### P0 — next phase (Phase 5: collaboration)
-- Reply / quote a message inline
-- Forward to another conversation
-- Message delete (sender) / edit (text only)
+### P0 — next phase (Phase 5C: search & groups)
+- Search inside messages (global + per-conversation)
+- Starred messages
 - Group chats (3+ participants)
+- Message reactions (emoji)
 
 ### P1
 - Online presence broadcast (replace static `is_online` flag)

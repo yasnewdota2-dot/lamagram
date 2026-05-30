@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Check, Search } from "lucide-react";
-import { Dialog, DialogContent } from "../ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -157,7 +157,7 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => 
         data-testid="forward-dialog"
       >
         <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-          <div className="text-base font-semibold">{t("forwardTo")}</div>
+          <DialogTitle className="text-base font-semibold m-0">{t("forwardTo")}</DialogTitle>
           <button
             onClick={() => onOpenChange(false)}
             className="p-1 rounded-md hover:bg-white/10"
@@ -167,6 +167,9 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => 
             <X className="w-4 h-4 text-white/70" />
           </button>
         </div>
+        <DialogDescription className="sr-only">
+          {t("forwardSelectChats")}
+        </DialogDescription>
         <div className="px-5 pb-3">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.10)" }}
