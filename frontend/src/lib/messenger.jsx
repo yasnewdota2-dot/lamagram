@@ -544,6 +544,11 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, [patchMessagesForConv]);
 
+  const updateUsername = useCallback(async (username) => {
+    const { data } = await api.patch("/users/me/username", { username });
+    return data;
+  }, []);
+
   const setActiveConv = useCallback(async (convId) => {
     activeConvIdRef.current = convId;
     store.set({ activeConvId: convId });
@@ -677,6 +682,20 @@ export const MessengerProvider = ({ children }) => {
           messagesByConv: { ...s.messagesByConv, [conversation_id]: next },
         };
       });
+      return;
+    }
+
+    if (data.type === "user_updated") {
+      const u = data.user;
+      if (!u) return;
+      store.set((s) => ({
+        ...s,
+        conversations: s.conversations.map((c) =>
+          c.other_user && c.other_user.id === u.id
+            ? { ...c, other_user: { ...c.other_user, ...u } }
+            : c
+        ),
+      }));
       return;
     }
 
@@ -933,6 +952,7 @@ export const MessengerProvider = ({ children }) => {
       unstarMessage,
       listStarred,
       toggleReaction,
+      updateUsername,
     }),
     [
       sendMessage,
@@ -967,6 +987,7 @@ export const MessengerProvider = ({ children }) => {
       unstarMessage,
       listStarred,
       toggleReaction,
+      updateUsername,
     ]
   );
 

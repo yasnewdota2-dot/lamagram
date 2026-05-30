@@ -72,6 +72,7 @@ export const ChatPanel = ({ conversation }) => {
   const [forwardSource, setForwardSource] = useState(null);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [savedTab, setSavedTab] = useState("notes"); // 'notes' | 'starred'
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleReply = React.useCallback(
     (m) => setReplyTarget(convId, m),
@@ -246,7 +247,24 @@ export const ChatPanel = ({ conversation }) => {
             )}
           </div>
         </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); setSearchOpen((v) => !v); }}
+          className={`p-2 rounded-xl transition ${searchOpen ? "bg-white/10 text-white" : "text-white/60 hover:text-white hover:bg-white/5"}`}
+          title={t("searchMessages")}
+          aria-label={t("searchMessages")}
+          data-testid="chat-header-search-toggle"
+        >
+          <SearchIcon className="w-4 h-4" />
+        </button>
       </div>
+
+      {/* Inline message search */}
+      <ChatSearchBar
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        conversationId={convId}
+        onJump={(msgId) => handleJumpToReply(msgId)}
+      />
 
       {/* Messages */}
       <div

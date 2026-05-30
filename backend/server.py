@@ -1280,6 +1280,36 @@ async def mute_conversation(conv_id: str, current_user: dict = Depends(get_curre
 async def unmute_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
     return await _toggle_set_field(conv_id, current_user["_id"], "muted_by", add=False)
 
+class UpdateUsernameRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    username: str = Field(..., min_length=3, max_length=20)
+
+@api_router.patch("/users/me/username")
+async def update_username(body: UpdateUsernameRequest, current_user: dict = Depends(get_current_user)):
+    new_un = (body.username or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]{3,20}", new_un):
+        raise HTTPException(400, "Invalid username format")
+    if new_un == current_user["username"]:
+        raise HTTPException(400, "Same as current username")
+    existing = await db.users.find_one({"username": new_un, "_id": {"$ne": current_user["_id"]}})
+    if existing:
+        raise HTTPException(409, "Username already taken")
+    await db.users.update_one({"_id": current_user["_id"]}, {"$set": {"username": new_un}})
+    updated = await db.users.find_one({"_id": current_user["_id"]})
+    pub = public_user(updated)
+    # Broadcast user_updated to everyone sharing a conversation
+    convs = await db.conversations.find({"participants": current_user["_id"]}, {"participants": 1}).to_list(2000)
+    targets = set()
+    for c in convs:
+        for p in c.get("participants", []):
+            if p != current_user["_id"]:
+                targets.add(p)
+    payload = {"type": "user_updated", "user": pub}
+    for uid in targets:
+        await manager.send_to_user(uid, payload)
+    await manager.send_to_user(current_user["_id"], payload)
+    return pub
+
 # ---------------------------------------------------------------------------
 # Phase 5C — Groups, Search, Starred
 # ---------------------------------------------------------------------------
