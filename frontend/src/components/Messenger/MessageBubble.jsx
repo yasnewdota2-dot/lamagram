@@ -21,6 +21,7 @@ import {
 } from "../ui/dropdown-menu";
 import { Ticks } from "./Ticks";
 import { MediaContent } from "./MediaContent";
+import { QuickReactionRow, ReactionChips } from "./Reactions";
 import { formatTime } from "../../lib/time";
 import { isEmojiOnly } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
@@ -166,6 +167,7 @@ const MessageBubbleImpl = ({
             {message.text}
           </div>
         )}
+        <ReactionChips message={message} convId={message.conversation_id} />
         <div
           className={`flex items-center gap-1 text-[10px] mt-0.5 ${
             mine ? "justify-end" : "justify-start"
@@ -201,6 +203,8 @@ const MessageBubbleImpl = ({
             style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.10)" }}
             data-testid={`message-actions-menu-${message.id}`}
           >
+            <QuickReactionRow messageId={message.id} convId={message.conversation_id} onPicked={() => setMenuOpen(false)} />
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onReply?.(message)} data-testid="msg-action-reply">
               <Reply className="w-4 h-4 mr-2" /> {t("reply")}
             </DropdownMenuItem>
