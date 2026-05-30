@@ -38,6 +38,7 @@ const formatPreview = (lm, t) => {
     if (lm.type === "image") return `📷 ${t("photo")}`;
     if (lm.type === "video") return `🎬 ${t("video")}`;
     if (lm.type === "file") return `📎 ${lm.file_name || t("file")}`;
+    if (lm.type === "location") return t("lastMsgLocation");
     if (lm.type === "voice") {
       const d = Math.floor(lm.duration_sec || 0);
       return `🎤 ${t("voice")} ${d}s`;

@@ -11,6 +11,7 @@ import {
   Download,
   ImageIcon,
   Music,
+  MapPin,
 } from "lucide-react";
 import { resolveAsset } from "../../lib/api";
 import { humanSize, formatDuration } from "../../lib/format";
@@ -371,6 +372,57 @@ export const VoiceContent = ({ media, mine, localUrl }) => {
   );
 };
 
+// ===== Location =====
+export const LocationContent = ({ media }) => {
+  const lat = Number(media?.lat);
+  const lng = Number(media?.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  const mapsHref = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`;
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{
+        background: "var(--bg-glass)",
+        border: "1px solid var(--border-glass)",
+        width: "100%",
+        maxWidth: 280,
+      }}
+      data-testid="media-location"
+    >
+      <div className="flex items-center gap-3 px-3 py-3">
+        <div
+          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+          style={{ background: "var(--accent-gradient)", boxShadow: "0 6px 18px -8px var(--accent-glow)" }}
+        >
+          <MapPin className="w-5 h-5 text-white" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+            {media?.address || "Location"}
+          </div>
+          <div className="text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }} data-testid="location-coords">
+            {`Lat ${lat.toFixed(5)}, Lng ${lng.toFixed(5)}`}
+          </div>
+        </div>
+      </div>
+      <a
+        href={mapsHref}
+        target="_blank"
+        rel="noreferrer"
+        className="block text-center text-xs font-medium py-2 hover:opacity-80"
+        style={{
+          background: "var(--bg-glass-strong)",
+          color: "var(--accent-blue, #3B9EFF)",
+          borderTop: "1px solid var(--border-glass)",
+        }}
+        data-testid="location-open-in-maps"
+      >
+        Open in Maps →
+      </a>
+    </div>
+  );
+};
+
 // ===== Dispatcher =====
 export const MediaContent = ({ message, mine, onOpenImage }) => {
   const localUrl = message?._localUrl;
@@ -383,7 +435,6 @@ export const MediaContent = ({ message, mine, onOpenImage }) => {
     return <VideoContent media={media} localUrl={localUrl} />;
   }
   if (message.type === "voice") {
-    // Voice MESSAGE: has waveform array. Otherwise treat as music file.
     const hasWaveform = Array.isArray(media?.waveform) && media.waveform.length > 0;
     if (hasWaveform) {
       return <VoiceContent media={media} mine={mine} localUrl={localUrl} />;
@@ -391,11 +442,13 @@ export const MediaContent = ({ message, mine, onOpenImage }) => {
     return <MusicContent media={media} localUrl={localUrl} />;
   }
   if (message.type === "file") {
-    // File with audio extension/mime → music card; otherwise generic file card.
     if (isMusicFile(media)) {
       return <MusicContent media={media} localUrl={localUrl} />;
     }
     return <FileContent media={media} />;
+  }
+  if (message.type === "location") {
+    return <LocationContent media={media} />;
   }
   return null;
 };

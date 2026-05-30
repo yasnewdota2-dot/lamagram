@@ -2276,6 +2276,57 @@ def _can_pin(conv: dict, user_id: str) -> bool:
     return user_id in (conv.get("participants") or [])
 
 
+class LocationRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    address: Optional[str] = Field(default=None, max_length=200)
+
+
+@api_router.post("/conversations/{conv_id}/location")
+async def post_location(conv_id: str, body: LocationRequest, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    if conv.get("kind") == "channel" and current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Only admins can post in channels")
+    now = datetime.now(timezone.utc).isoformat()
+    other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
+    is_channel = conv.get("kind") == "channel"
+    is_dm = conv.get("kind") in (None, "dm") and other_id is not None and conv.get("kind") != "saved" and not is_channel
+    initial_status = "sent"
+    if is_dm and other_id and manager.is_online(other_id):
+        initial_status = "delivered"
+    msg = {
+        "_id": str(uuid.uuid4()),
+        "conversation_id": conv_id,
+        "sender_id": current_user["_id"],
+        "type": "location",
+        "text": None,
+        "media": {"lat": body.lat, "lng": body.lng, "address": body.address},
+        "status": initial_status,
+        "created_at": now,
+        "delivered_at": now if initial_status == "delivered" else None,
+        "deleted_for_everyone": False,
+        "starred_by": [],
+        "reactions": [],
+        "pinned_in_conv": False,
+    }
+    await db.messages.insert_one(msg)
+    pm = public_message(msg)
+    new_payload = {"type": "message_new", "message": pm, "conversation_id": conv_id}
+    if conv.get("kind") in ("group", "channel"):
+        for pid in conv["participants"]:
+            await manager.send_to_user(pid, new_payload)
+    else:
+        await manager.send_to_user(current_user["_id"], new_payload)
+        if other_id:
+            await manager.send_to_user(other_id, new_payload)
+    return pm
+
+
 @api_router.post("/messages/{message_id}/pin")
 async def pin_message(message_id: str, current_user: dict = Depends(get_current_user)):
     msg = await db.messages.find_one({"_id": message_id})

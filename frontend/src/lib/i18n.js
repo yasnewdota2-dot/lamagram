@@ -240,6 +240,13 @@ const DICTIONARY = {
     transferOwnershipNeedAdmin: "Target must be admin first",
     banConfirm: "Ban {name}? They won't be able to rejoin via link.",
     owner: "Owner",
+    sendLocation: "Send location",
+    locationPermissionDenied: "Location permission denied",
+    cannotGetLocation: "Cannot get your location",
+    openInMaps: "Open in Maps",
+    lastMsgLocation: "📍 Location",
+    locationCoords: "Lat {lat}, Lng {lng}",
+    banFromChannelLabel: "Ban from channel",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -480,6 +487,13 @@ const DICTIONARY = {
     transferOwnershipNeedAdmin: "ابتدا باید ادمین شود",
     banConfirm: "بن کردن {name}؟ نمی‌تواند از طریق لینک دوباره وارد شود.",
     owner: "مالک",
+    sendLocation: "ارسال موقعیت",
+    locationPermissionDenied: "اجازه دسترسی به موقعیت رد شد",
+    cannotGetLocation: "دریافت موقعیت ممکن نیست",
+    openInMaps: "باز کردن در نقشه",
+    lastMsgLocation: "📍 موقعیت",
+    locationCoords: "عرض {lat}، طول {lng}",
+    banFromChannelLabel: "بن از کانال",
   },
 };
 

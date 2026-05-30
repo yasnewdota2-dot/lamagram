@@ -462,6 +462,12 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  // Phase 8E: location messages
+  const sendLocation = useCallback(async (convId, lat, lng, address = null) => {
+    const { data } = await api.post(`/conversations/${convId}/location`, { lat, lng, address });
+    return data;
+  }, []);
+
   // Phase 8B: block / unblock / report
   const blockUser = useCallback(async (userId) => {
     const { data } = await api.post(`/users/${userId}/block`);
@@ -1167,6 +1173,7 @@ export const MessengerProvider = ({ children }) => {
       banMember,
       unbanMember,
       transferOwnership,
+      sendLocation,
     }),
     [
       sendMessage,
@@ -1220,6 +1227,7 @@ export const MessengerProvider = ({ children }) => {
       banMember,
       unbanMember,
       transferOwnership,
+      sendLocation,
     ]
   );
 

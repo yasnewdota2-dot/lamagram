@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil } from "lucide-react";
+import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil, MapPin } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useComposerStateForConv } from "../../lib/messenger";
 import { VoiceRecorder } from "./VoiceRecorder";
@@ -16,7 +16,7 @@ const MAX_BYTES = 100 * 1024 * 1024;
 
 export const Composer = ({ conversationId, onUploadError }) => {
   const { t, lang } = useI18n();
-  const { sendMessage, sendTyping, uploadMedia, editMessage, setReplyTarget, setEditTarget } = useMessengerActions();
+  const { sendMessage, sendTyping, uploadMedia, editMessage, setReplyTarget, setEditTarget, sendLocation } = useMessengerActions();
   const composerState = useComposerStateForConv(conversationId);
   const replyTo = composerState.replyTo || null;
   const editTarget = composerState.editTarget || null;
@@ -277,6 +277,35 @@ export const Composer = ({ conversationId, onUploadError }) => {
           data-testid="composer-emoji-button"
         >
           <Smile className="w-5 h-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (!navigator.geolocation) {
+              if (window.sonnerToast) window.sonnerToast.error(t("cannotGetLocation"));
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                try {
+                  await sendLocation(conversationId, pos.coords.latitude, pos.coords.longitude);
+                } catch (e) {
+                  if (onUploadError) onUploadError(e?.response?.data?.detail || t("cannotGetLocation"));
+                }
+              },
+              (err) => {
+                const msg = err && err.code === 1 ? t("locationPermissionDenied") : t("cannotGetLocation");
+                if (onUploadError) onUploadError(msg);
+              },
+              { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+          }}
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label={t("sendLocation")}
+          title={t("sendLocation")}
+          data-testid="composer-location-button"
+        >
+          <MapPin className="w-5 h-5" />
         </button>
         <textarea
           ref={taRef}
