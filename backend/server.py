@@ -1377,6 +1377,8 @@ class UpdateGroupRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: Optional[str] = Field(None, min_length=3, max_length=50)
     description: Optional[str] = Field(None, max_length=200)
+    is_public: Optional[bool] = None
+    handle: Optional[str] = None
 
 class AddMembersRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1455,6 +1457,24 @@ async def update_group(conv_id: str, body: UpdateGroupRequest, current_user: dic
         patch["title"] = body.title.strip()
     if body.description is not None:
         patch["description"] = body.description.strip() or None
+    # Phase 6: handle + is_public
+    if body.is_public is not None:
+        patch["is_public"] = bool(body.is_public)
+    if body.handle is not None:
+        if body.handle == "":
+            patch["handle"] = None
+        else:
+            h = body.handle.strip().lower()
+            if not HANDLE_RE.match(h):
+                raise HTTPException(400, "Invalid handle format")
+            if await _name_taken(h, exclude_conv_id=conv_id):
+                raise HTTPException(409, "Handle already taken")
+            patch["handle"] = h
+    # If going public, ensure final handle is set
+    final_public = patch.get("is_public", conv.get("is_public", False))
+    final_handle = patch.get("handle", conv.get("handle"))
+    if final_public and not final_handle:
+        raise HTTPException(400, "handle is required when going public")
     if patch:
         await db.conversations.update_one({"_id": conv_id}, {"$set": patch})
     updated = await db.conversations.find_one({"_id": conv_id})
@@ -1727,6 +1747,8 @@ class UpdateChannelRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: Optional[str] = Field(None, min_length=3, max_length=50)
     description: Optional[str] = Field(None, max_length=500)
+    is_public: Optional[bool] = None
+    handle: Optional[str] = None
 
 @api_router.post("/channels")
 async def create_channel(body: CreateChannelRequest, current_user: dict = Depends(get_current_user)):
@@ -1782,6 +1804,22 @@ async def update_channel(conv_id: str, body: UpdateChannelRequest, current_user:
         updates["title"] = body.title.strip()
     if body.description is not None:
         updates["description"] = body.description.strip()
+    if body.is_public is not None:
+        updates["is_public"] = bool(body.is_public)
+    if body.handle is not None:
+        if body.handle == "":
+            updates["handle"] = None
+        else:
+            h = body.handle.strip().lower()
+            if not HANDLE_RE.match(h):
+                raise HTTPException(400, "Invalid handle format")
+            if await _name_taken(h, exclude_conv_id=conv_id):
+                raise HTTPException(409, "Handle already taken")
+            updates["handle"] = h
+    final_public = updates.get("is_public", conv.get("is_public", False))
+    final_handle = updates.get("handle", conv.get("handle"))
+    if final_public and not final_handle:
+        raise HTTPException(400, "handle is required when going public")
     if updates:
         await db.conversations.update_one({"_id": conv_id}, {"$set": updates})
         conv.update(updates)
@@ -1863,6 +1901,151 @@ async def remove_channel_member(conv_id: str, user_id: str, current_user: dict =
         {"$pull": {"participants": user_id, "admins": user_id}},
     )
     return {"ok": True}
+
+# === Phase 6: Join / Discover / Invite ===
+
+class JoinRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    handle: Optional[str] = None
+    invite_token: Optional[str] = None
+
+def _discover_item(c: dict) -> dict:
+    return {
+        "id": c["_id"],
+        "kind": c.get("kind"),
+        "title": c.get("title", ""),
+        "avatar_url": c.get("avatar_url"),
+        "handle": c.get("handle"),
+        "description": c.get("description"),
+        "member_count": len(c.get("participants", [])),
+    }
+
+async def _add_participant_and_broadcast(conv: dict, user: dict) -> dict:
+    """Add user to conv.participants if not already; broadcast conversation_new to self
+    and member_joined to existing participants. Returns updated public conversation."""
+    uid = user["_id"]
+    conv_id = conv["_id"]
+    already = uid in conv["participants"]
+    if not already:
+        await db.conversations.update_one(
+            {"_id": conv_id},
+            {"$addToSet": {"participants": uid}},
+        )
+        conv["participants"] = list({*conv["participants"], uid})
+    pub = await public_conversation(conv, uid)
+    pub["is_member"] = True
+    # WS broadcasts
+    await manager.send_to_user(uid, {"type": "conversation_new", "conversation": pub})
+    if not already:
+        member_payload = {
+            "type": "member_joined",
+            "conversation_id": conv_id,
+            "user": public_user(user),
+        }
+        for pid in conv["participants"]:
+            if pid != uid:
+                await manager.send_to_user(pid, member_payload)
+    return pub
+
+@api_router.post("/conversations/join")
+async def join_conversation(body: JoinRequest, current_user: dict = Depends(get_current_user)):
+    handle_in = (body.handle or "").strip().lower() or None
+    token_in = (body.invite_token or "").strip() or None
+    if (handle_in and token_in) or (not handle_in and not token_in):
+        raise HTTPException(400, "Provide exactly one of handle or invite_token")
+    if handle_in:
+        conv = await db.conversations.find_one({"handle": handle_in, "is_public": True})
+        if not conv or conv.get("kind") not in ("group", "channel"):
+            raise HTTPException(404, "Public conversation not found")
+    else:
+        conv = await db.conversations.find_one({"invite_token": token_in})
+        if not conv or conv.get("kind") not in ("group", "channel"):
+            raise HTTPException(404, "Invite not found")
+    if conv.get("kind") in ("dm", "saved"):
+        raise HTTPException(400, "DMs and Saved Messages are not joinable")
+    return await _add_participant_and_broadcast(conv, current_user)
+
+@api_router.get("/discover")
+async def discover(q: str = "", limit: int = 20, current_user: dict = Depends(get_current_user)):
+    limit = max(1, min(limit, 50))
+    me_id = current_user["_id"]
+    base = {"is_public": True, "kind": {"$in": ["group", "channel"]}}
+    if not q.strip():
+        cursor = db.conversations.find(base)
+        docs = await cursor.to_list(200)
+        docs.sort(key=lambda c: -len(c.get("participants", [])))
+        out = [_discover_item(c) for c in docs if me_id not in c.get("participants", [])][:limit]
+        return out
+    qn = q.strip().lower()
+    # Build OR query: handle exact, handle prefix, title substring
+    safe = re.escape(qn)
+    cursor = db.conversations.find({
+        **base,
+        "$or": [
+            {"handle": qn},
+            {"handle": {"$regex": f"^{safe}", "$options": "i"}},
+            {"title": {"$regex": safe, "$options": "i"}},
+        ],
+    })
+    docs = await cursor.to_list(200)
+    # Rank: handle exact > handle prefix > title match
+    def rank(c):
+        h = (c.get("handle") or "").lower()
+        t = (c.get("title") or "").lower()
+        if h == qn: return 0
+        if h.startswith(qn): return 1
+        if qn in t: return 2
+        return 3
+    docs.sort(key=lambda c: (rank(c), -len(c.get("participants", []))))
+    out = [_discover_item(c) for c in docs if me_id not in c.get("participants", [])][:limit]
+    return out
+
+@api_router.get("/conversations/by-handle/{handle}")
+async def conversation_by_handle(handle: str, current_user: dict = Depends(get_current_user)):
+    h = handle.strip().lower()
+    conv = await db.conversations.find_one({"handle": h, "is_public": True})
+    if not conv or conv.get("kind") not in ("group", "channel"):
+        raise HTTPException(404, "Public conversation not found")
+    item = _discover_item(conv)
+    item["is_member"] = current_user["_id"] in conv.get("participants", [])
+    return item
+
+# -------- Invite-link endpoints (groups + channels share helpers) --------
+
+async def _rotate_invite(conv_id: str, expected_kind: str, current_user: dict) -> dict:
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != expected_kind:
+        raise HTTPException(404, f"{expected_kind.title()} not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    token = str(uuid.uuid4())
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"invite_token": token}})
+    return {"invite_token": token, "invite_path": f"/join/{token}"}
+
+async def _revoke_invite(conv_id: str, expected_kind: str, current_user: dict) -> dict:
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != expected_kind:
+        raise HTTPException(404, f"{expected_kind.title()} not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"invite_token": None}})
+    return {"ok": True}
+
+@api_router.post("/groups/{conv_id}/invite-link")
+async def group_invite_create(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _rotate_invite(conv_id, "group", current_user)
+
+@api_router.delete("/groups/{conv_id}/invite-link")
+async def group_invite_revoke(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _revoke_invite(conv_id, "group", current_user)
+
+@api_router.post("/channels/{conv_id}/invite-link")
+async def channel_invite_create(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _rotate_invite(conv_id, "channel", current_user)
+
+@api_router.delete("/channels/{conv_id}/invite-link")
+async def channel_invite_revoke(conv_id: str, current_user: dict = Depends(get_current_user)):
+    return await _revoke_invite(conv_id, "channel", current_user)
 
 @api_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
