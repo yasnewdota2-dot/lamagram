@@ -42,17 +42,29 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 - [x] `/app/memory/test_credentials.md` + `/app/memory/auth_testing.md` written
 - [x] 25/25 backend tests + 14/14 frontend e2e flows pass
 
+## What's implemented (2026-02 — Phase 2 — Real-time 1:1 Chat)
+- [x] Mongo collections: `conversations` (sorted participants, embedded last_message), `messages` (status: sent/delivered/seen)
+- [x] REST: `GET /api/users/search?q=`, `GET /api/users/{id}`
+- [x] REST: `POST /api/conversations` (idempotent), `GET /api/conversations` (with `other_user`, `unread_count`, `last_message`, sorted by `last_message_at` desc)
+- [x] REST: `GET /api/conversations/{id}/messages?before=&limit=` (oldest→newest, paginated), `POST /api/conversations/{id}/messages`, `POST /api/conversations/{id}/read`
+- [x] WebSocket `/api/ws?token=<jwt>` — JWT auth via query (Bearer header fallback); `ready`, `message_new`, `message_status`, `typing`, `presence`, `ping`/`pong`; in-process `ConnectionManager`
+- [x] Status transitions: `sent` → `delivered` (recipient WS-connected, or on next WS connect) → `seen` (recipient calls `/read`)
+- [x] Presence broadcast on connect/disconnect to all conversation partners; `is_online`/`last_seen` persisted on `users`
+- [x] Typing indicator relayed server-side to other participant only
+- [x] Seed 2 demo conversations on first boot (alice↔bob: 4 msgs, alice↔charlie: 2 msgs), all status=seen
+- [x] Frontend `MessengerProvider` (WS lifecycle, reconnect with exponential backoff up to 30s, 25s heartbeat, state for conversations/messages/typing/presence)
+- [x] Full messenger UI in `/`: sidebar (own profile, debounced search, conversation list with unread badges, online dots) + ChatPanel (header with presence + typing indicator, message thread with grouping <2min, gradient mine bubbles + neutral theirs, ticks inside bubble, composer with typing relay)
+- [x] RTL bubble alignment flips correctly in Persian
+- [x] 25/25 Phase 2 backend tests pass + frontend e2e verified (single-tab UI + cross-user real-time via REST simulation)
+
 ## Prioritized backlog
 
-### P0 — next phase (Chat)
-- WebSocket gateway: `/api/ws` with JWT auth handshake
-- Conversation + message Mongo collections
-- `GET /api/users/search?q=` (find users by @username)
-- `POST /api/conversations` (1-1 + group)
-- `GET /api/conversations`, `GET /api/conversations/{id}/messages`
-- Real-time message send/receive, typing indicators, delivery + read receipts
-- Chat list in sidebar, message thread UI, composer
-- Persian messages render correctly (mixed LTR/RTL paragraphs)
+### P0 — next phase (Phase 3: rich messages)
+- Image / video / file uploads in chat (reuse `/api/uploads`; thumbnail generation; max 100MB)
+- Emoji picker (Composer)
+- Voice notes (mic capture + audio playback)
+- Reply / quote a message inline
+- Forward to another conversation
 
 ### P1
 - Online presence broadcast (replace static `is_online` flag)
