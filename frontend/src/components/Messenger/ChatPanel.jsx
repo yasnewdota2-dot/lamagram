@@ -57,6 +57,7 @@ export const ChatPanel = ({ conversation }) => {
   const { user } = useAuth();
   const { uploadMedia } = useMessengerActions();
   const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
+  const { setActiveConv } = useMessengerActions();
   const convId = conversation?.id;
   const messages = useMessagesForConv(convId);
   const typingMap = useTypingForConv(convId);
@@ -266,13 +267,63 @@ export const ChatPanel = ({ conversation }) => {
         onJump={(msgId) => handleJumpToReply(msgId)}
       />
 
-      {/* Messages */}
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
-        data-testid="messages-scroll"
-      >
+      {/* Saved Messages tab strip (Notes / Starred) */}
+      {isSaved && (
+        <div
+          className="flex items-center gap-2 px-3 py-2 border-b border-white/10"
+          style={{ background: "rgba(11,11,18,0.45)", backdropFilter: "blur(12px)" }}
+          data-testid="saved-tab-strip"
+        >
+          {[
+            { key: "notes", label: t("savedNotes") },
+            { key: "starred", label: t("starredMessages") },
+          ].map((tab) => {
+            const active = savedTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setSavedTab(tab.key)}
+                className="px-3 py-1.5 rounded-xl text-xs font-medium transition"
+                style={
+                  active
+                    ? {
+                        background: "linear-gradient(135deg,#3B9EFF,#A78BFA)",
+                        color: "white",
+                        boxShadow: "0 6px 18px -8px rgba(59,158,255,0.55)",
+                      }
+                    : {
+                        background: "rgba(255,255,255,0.04)",
+                        color: "rgba(255,255,255,0.65)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }
+                }
+                data-testid={`saved-tab-${tab.key}`}
+                data-active={active ? "true" : "false"}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Messages or Starred view (for Saved Messages) */}
+      {isSaved && savedTab === "starred" ? (
+        <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-2" data-testid="saved-starred-pane">
+          <StarredView
+            onJumpTo={(cid, mid) => {
+              setActiveConv(cid);
+              setTimeout(() => handleJumpToReply(mid), 600);
+            }}
+          />
+        </div>
+      ) : (
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
+          data-testid="messages-scroll"
+        >
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center" data-testid="empty-conversation">
             <div className="max-w-xs">
@@ -310,9 +361,10 @@ export const ChatPanel = ({ conversation }) => {
           })
         )}
       </div>
+      )}
 
       {/* Scroll-down pill */}
-      {!autoScroll && pendingNew > 0 && (
+      {!autoScroll && pendingNew > 0 && !(isSaved && savedTab === "starred") && (
         <button
           onClick={() => {
             scrollToBottom(true);
@@ -332,13 +384,15 @@ export const ChatPanel = ({ conversation }) => {
       )}
 
       {/* Composer */}
-      <Composer
-        conversationId={convId}
-        onUploadError={(msg) => {
-          setToast(msg);
-          setTimeout(() => setToast(""), 3000);
-        }}
-      />
+      {!(isSaved && savedTab === "starred") && (
+        <Composer
+          conversationId={convId}
+          onUploadError={(msg) => {
+            setToast(msg);
+            setTimeout(() => setToast(""), 3000);
+          }}
+        />
+      )}
 
       {/* Drag overlay */}
       {dragOver && (
