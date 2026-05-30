@@ -57,14 +57,28 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 - [x] RTL bubble alignment flips correctly in Persian
 - [x] 25/25 Phase 2 backend tests pass + frontend e2e verified (single-tab UI + cross-user real-time via REST simulation)
 
+## What's implemented (2026-02 — Phase 3 — Media, Voice, Emoji, Polish)
+- [x] `POST /api/messages/upload` (multipart): image / video / file / voice; conversation_id + kind + file (+ duration_sec + waveform for voice). 100 MB cap; mime whitelist; participant validation; 400/403/404/413 error contracts. Pillow extracts image width/height. Storage: `/app/backend/uploads/media/{yyyy}/{mm}/{uuid}.{ext}`, served at `/api/uploads/media/...`.
+- [x] Message schema extended: `type` ∈ `text|image|video|file|voice`; `media: {url, mime, size_bytes, file_name, width?, height?, duration_sec?, waveform?}`. `conversation.last_message` now carries `type`, `media_label_key`, `file_name`, `duration_sec`.
+- [x] WS broadcasts `message_new` + `message_status:delivered` for media uploads (same path as text)
+- [x] Frontend `MessengerProvider.uploadMedia(convId, file, opts)`: optimistic ghost bubble with `_progress` (axios `onUploadProgress`), replaced with real message on success or marked `failed` on error. `document.title` syncs to `(N) Glass` when unread > 0.
+- [x] Composer with Paperclip/Smile/Mic buttons; emoji-picker-react popover (dark theme, search), inserts at cursor; Send icon replaces mic when textarea has content.
+- [x] VoiceRecorder: MediaRecorder + AnalyserNode sampling @ 10 Hz → downsampled to 40-bucket waveform; produces audio/webm blob + duration_sec.
+- [x] MediaContent renderers: ImageContent (rounded thumb, click → Lightbox), VideoContent (HTML5 `<video controls>`), FileContent (glass card with icon, name, human size, download), VoiceContent (play/pause + animated waveform with playback progress + mm:ss duration).
+- [x] MessageBubble: per-type rendering; image/video/file have time+ticks overlay on bubble; emoji-only messages (1-3 emojis) render at text-[3rem] (Telegram-style).
+- [x] Lightbox modal (Esc / X / outside-click to close), glass backdrop blur.
+- [x] ChatPanel: drag-drop file upload with glass overlay ("Drop file to send"); scroll-to-bottom pill ("N new messages") when scrolled away from bottom; toast for upload errors / file-too-large; "👋 Say hi to {name}" empty state.
+- [x] ChatList: localized last_message preview for media — `📷 Photo`, `🎬 Video`, `📎 {file_name}`, `🎤 Voice {Ns}` with EN+FA strings.
+- [x] i18n EN+FA additions: photo, video, file, voice, recording, micDenied, dropFile, fileTooLarge, uploadFailed, unsupportedType, searchEmoji, sayHi/sayHiSub, newMessages.
+- [x] 13 new backend tests + 49 regression all pass; frontend Playwright verified composer buttons, image upload + WS receive within 2 s, lightbox open/close, emoji-big rendering (48 px), document.title sync, localized sidebar preview, voice recorder UI.
+
 ## Prioritized backlog
 
-### P0 — next phase (Phase 3: rich messages)
-- Image / video / file uploads in chat (reuse `/api/uploads`; thumbnail generation; max 100MB)
-- Emoji picker (Composer)
-- Voice notes (mic capture + audio playback)
+### P0 — next phase (Phase 4: collaboration)
 - Reply / quote a message inline
 - Forward to another conversation
+- Message delete (sender) / edit (text only)
+- Group chats (3+ participants)
 
 ### P1
 - Online presence broadcast (replace static `is_online` flag)
