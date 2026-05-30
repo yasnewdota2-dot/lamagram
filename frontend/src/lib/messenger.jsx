@@ -33,6 +33,8 @@ const initialState = {
   wsConnected: false,
   // Phase 5B — per-conversation composer state
   composerByConv: {}, // { [convId]: { replyTo: msg|null, editTarget: msg|null } }
+  // Phase 5D — cached group members by conversation_id (userId -> public_user)
+  groupMembersByConv: {},
 };
 
 const createStore = (initial) => {
@@ -79,6 +81,9 @@ export const useWsConnected = () =>
 
 export const useComposerStateForConv = (convId) =>
   useStoreSlice((s) => (convId ? s.composerByConv[convId] || EMPTY_OBJECT : EMPTY_OBJECT));
+
+export const useGroupMembers = (convId) =>
+  useStoreSlice((s) => (convId ? s.groupMembersByConv[convId] || EMPTY_OBJECT : EMPTY_OBJECT));
 
 /* ---- Actions context (stable callbacks) ---- */
 const ActionsContext = createContext(null);
@@ -496,6 +501,23 @@ export const MessengerProvider = ({ children }) => {
   const listGroupMembers = useCallback(async (convId) => {
     const { data } = await api.get(`/groups/${convId}/members`);
     return data;
+  }, []);
+  // Cached fetch: stores members as {userId: member} under groupMembersByConv[convId]
+  const loadGroupMembers = useCallback(async (convId) => {
+    if (!convId) return;
+    const cached = store.get().groupMembersByConv[convId];
+    if (cached && Object.keys(cached).length > 0) return;
+    try {
+      const { data } = await api.get(`/groups/${convId}/members`);
+      const map = {};
+      for (const m of data || []) map[m.id] = m;
+      store.set((s) => ({
+        ...s,
+        groupMembersByConv: { ...s.groupMembersByConv, [convId]: map },
+      }));
+    } catch {
+      /* ignore - bubble fallback will render User xxxxxx */
+    }
   }, []);
   const searchInConversation = useCallback(async (convId, q) => {
     const { data } = await api.get(`/conversations/${convId}/messages/search`, { params: { q } });
@@ -946,6 +968,7 @@ export const MessengerProvider = ({ children }) => {
       promoteGroupAdmin,
       demoteGroupAdmin,
       listGroupMembers,
+      loadGroupMembers,
       searchInConversation,
       searchMessagesGlobal,
       starMessage,
@@ -981,6 +1004,7 @@ export const MessengerProvider = ({ children }) => {
       promoteGroupAdmin,
       demoteGroupAdmin,
       listGroupMembers,
+      loadGroupMembers,
       searchInConversation,
       searchMessagesGlobal,
       starMessage,

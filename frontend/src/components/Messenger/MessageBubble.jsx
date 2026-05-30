@@ -29,6 +29,13 @@ import { useI18n } from "../../lib/i18n";
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const DELETE_ALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+const HUE_PALETTE = ['#7dd3fc','#c4b5fd','#fda4af','#bef264','#fcd34d','#f9a8d4','#a5f3fc','#86efac'];
+const senderColor = (id) => {
+  let h = 0;
+  for (const c of String(id || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return HUE_PALETTE[h % HUE_PALETTE.length];
+};
+
 const ReplyQuote = ({ replyTo, mine, onClick }) => {
   if (!replyTo) return null;
   return (
@@ -76,6 +83,8 @@ const MessageBubbleImpl = ({
   message,
   mine,
   showAvatar,
+  conversation,
+  groupMembers,
   onOpenImage,
   testId,
   onReply,
@@ -143,6 +152,17 @@ const MessageBubbleImpl = ({
               }
         }
       >
+        {conversation?.kind === "group" && !mine && showAvatar && (
+          <div
+            className="text-[11px] font-semibold mb-1"
+            style={{ color: senderColor(message.sender_id) }}
+            data-testid="group-sender-label"
+          >
+            {groupMembers?.[message.sender_id]?.display_name ||
+              groupMembers?.[message.sender_id]?.username ||
+              `User ${String(message.sender_id).slice(0, 6)}`}
+          </div>
+        )}
         {message.forwarded_from && <ForwardedHeader from={message.forwarded_from} t={t} />}
         {message.reply_to && (
           <ReplyQuote
@@ -256,6 +276,8 @@ const MessageBubbleImpl = ({
 const areEqual = (prev, next) => {
   if (prev.mine !== next.mine) return false;
   if (prev.showAvatar !== next.showAvatar) return false;
+  if (prev.conversation?.kind !== next.conversation?.kind) return false;
+  if (prev.groupMembers !== next.groupMembers) return false;
   if (prev.onOpenImage !== next.onOpenImage) return false;
   if (prev.onReply !== next.onReply) return false;
   if (prev.onForward !== next.onForward) return false;

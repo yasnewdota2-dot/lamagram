@@ -8,6 +8,7 @@ import {
   useMessagesForConv,
   useTypingForConv,
   usePresenceForUser,
+  useGroupMembers,
 } from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
@@ -57,12 +58,13 @@ export const ChatPanel = ({ conversation }) => {
   const { user } = useAuth();
   const { uploadMedia } = useMessengerActions();
   const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
-  const { setActiveConv } = useMessengerActions();
+  const { setActiveConv, loadGroupMembers } = useMessengerActions();
   const convId = conversation?.id;
   const messages = useMessagesForConv(convId);
   const typingMap = useTypingForConv(convId);
   const other = conversation?.other_user;
   const livePres = usePresenceForUser(other?.id);
+  const groupMembers = useGroupMembers(convId);
   const scrollRef = useRef(null);
   const prevLenRef = useRef(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -138,6 +140,13 @@ export const ChatPanel = ({ conversation }) => {
     window.addEventListener("jump-to-message", handler);
     return () => window.removeEventListener("jump-to-message", handler);
   }, [handleJumpToReply]);
+
+  // Lazy-load group members (one fetch per group conv, cached)
+  useEffect(() => {
+    if (conversation?.kind === "group" && convId) {
+      loadGroupMembers(convId);
+    }
+  }, [conversation?.kind, convId, loadGroupMembers]);
 
   useEffect(() => {
     const len = messages.length;
@@ -358,6 +367,8 @@ export const ChatPanel = ({ conversation }) => {
                   message={m}
                   mine={mine}
                   showAvatar={showAvatar}
+                  conversation={conversation}
+                  groupMembers={groupMembers}
                   onOpenImage={setLightboxSrc}
                   onReply={handleReply}
                   onForward={handleForward}
