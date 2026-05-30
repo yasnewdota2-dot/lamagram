@@ -250,6 +250,10 @@ const DICTIONARY = {
     deleteMessageTitle: "Delete message?",
     areYouSure: "Are you sure?",
     searchPlain: "Search",
+    joinThisGroup: "Join this group",
+    joinThisChannel: "Join this channel",
+    openConversation: "Open",
+    publicChats: "Public chats",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -500,6 +504,10 @@ const DICTIONARY = {
     deleteMessageTitle: "حذف پیام؟",
     areYouSure: "مطمئن هستید؟",
     searchPlain: "جستجو",
+    joinThisGroup: "پیوستن به این گروه",
+    joinThisChannel: "پیوستن به این کانال",
+    openConversation: "باز کردن",
+    publicChats: "چت‌های عمومی",
   },
 };
 

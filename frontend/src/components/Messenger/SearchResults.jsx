@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search } from "lucide-react";
+import { Search, Megaphone, Users } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useConversations } from "../../lib/messenger";
 import { useAuth } from "../../lib/auth";
@@ -9,8 +9,10 @@ import { OnlineDot } from "./OnlineDot";
 import { GroupAvatar } from "./GroupAvatar";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative } from "../../lib/time";
+import { formatCount } from "../../lib/formatNumber";
 import { EmptyState } from "../EmptyState";
 import { useUserProfile } from "./UserProfileDrawer";
+import { usePublicChatPreview } from "./PublicChatPreviewDrawer";
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -36,13 +38,16 @@ const highlightMatch = (text, q) => {
 export const SearchResults = ({ query, onPick }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const { searchUsers, searchMessagesGlobal, setActiveConv } = useMessengerActions();
+  const { searchUsers, searchMessagesGlobal, discoverPublic, setActiveConv } = useMessengerActions();
   const { openUserProfile } = useUserProfile();
+  const { openPublicChat } = usePublicChatPreview();
   const conversations = useConversations();
   const [people, setPeople] = useState([]);
   const [messageResults, setMessageResults] = useState([]);
+  const [publicChats, setPublicChats] = useState([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingPublic, setLoadingPublic] = useState(false);
 
   const q = query.trim();
   const isAtSearch = q.startsWith("@");
@@ -97,6 +102,37 @@ export const SearchResults = ({ query, onPick }) => {
     };
   }, [q, isAtSearch, searchMessagesGlobal]);
 
+  // Public chats discovery (groups + channels) — strip leading @ for handle searches
+  useEffect(() => {
+    let cancelled = false;
+    if (!q) {
+      setPublicChats([]);
+      setLoadingPublic(false);
+      return;
+    }
+    const term = q.startsWith("@") ? q.slice(1) : q;
+    if (!term) {
+      setPublicChats([]);
+      setLoadingPublic(false);
+      return;
+    }
+    setLoadingPublic(true);
+    const id = setTimeout(async () => {
+      try {
+        const data = await discoverPublic(term, 8);
+        if (!cancelled) setPublicChats(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setPublicChats([]);
+      } finally {
+        if (!cancelled) setLoadingPublic(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [q, discoverPublic]);
+
   // Index of conversations by id for resolving message conv metadata
   const convById = useMemo(() => {
     const m = new Map();
@@ -133,7 +169,8 @@ export const SearchResults = ({ query, onPick }) => {
 
   const hasPeople = people.length > 0;
   const hasMessages = messageResults.length > 0;
-  const isLoading = loadingPeople || loadingMessages;
+  const hasPublic = publicChats.length > 0;
+  const isLoading = loadingPeople || loadingMessages || loadingPublic;
 
   return (
     <AnimatePresence>
@@ -224,11 +261,56 @@ export const SearchResults = ({ query, onPick }) => {
           </section>
         )}
 
+        {/* Public chats (groups + channels) section */}
+        {hasPublic && (
+          <section data-testid="search-public-chats-section">
+            {(hasPeople || hasMessages) && <div className="h-px bg-white/5 mx-3" />}
+            <div
+              className="px-3 pt-2.5 pb-1 text-[10px] uppercase tracking-wider text-[var(--gm-text-muted)]"
+              data-testid="search-public-chats-title"
+            >
+              {t("publicChats")}
+            </div>
+            {publicChats.map((pc) => {
+              const isCh = pc.kind === "channel";
+              return (
+                <button
+                  key={pc.id}
+                  onClick={() => openPublicChat(pc.handle)}
+                  className="w-full text-left flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.06] transition-colors"
+                  data-testid={`search-public-chat-${pc.handle}`}
+                >
+                  <GroupAvatar group={{ title: pc.title, avatar_url: pc.avatar_url }} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-white text-sm font-medium truncate">{pc.title}</div>
+                      <span
+                        className="inline-flex items-center gap-0.5 text-[9px] uppercase px-1 py-0.5 rounded shrink-0"
+                        style={{
+                          background: isCh ? "rgba(59,158,255,0.14)" : "rgba(167,139,250,0.14)",
+                          border: `1px solid ${isCh ? "rgba(59,158,255,0.30)" : "rgba(167,139,250,0.30)"}`,
+                          color: isCh ? "#9ABEFF" : "#C9B8FF",
+                        }}
+                      >
+                        {isCh ? <Megaphone className="w-2.5 h-2.5" /> : <Users className="w-2.5 h-2.5" />}
+                        {isCh ? t("channelBadge") : t("groupBadge")}
+                      </span>
+                    </div>
+                    <div className="text-xs text-[var(--gm-text-muted)] truncate">
+                      @{pc.handle} · {formatCount(pc.member_count || 0)} {isCh ? t("subscribers") : t("members")}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </section>
+        )}
+
         {/* Loading / empty states */}
-        {isLoading && !hasPeople && !hasMessages && (
+        {isLoading && !hasPeople && !hasMessages && !hasPublic && (
           <div className="px-4 py-3 text-xs text-[var(--gm-text-muted)]">{t("loading")}</div>
         )}
-        {!isLoading && !hasPeople && !hasMessages && (
+        {!isLoading && !hasPeople && !hasMessages && !hasPublic && (
           <EmptyState
             icon={Search}
             title={isAtSearch ? t("noUsersFound") : t("noSearchResults")}

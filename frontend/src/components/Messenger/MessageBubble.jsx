@@ -31,6 +31,7 @@ import { useI18n } from "../../lib/i18n";
 import { useLongPress } from "../../lib/useLongPress";
 import { parseMentions } from "../../lib/parseMentions";
 import { useUserProfile } from "./UserProfileDrawer";
+import { usePublicChatPreview } from "./PublicChatPreviewDrawer";
 import { useMessengerActions } from "../../lib/messenger";
 import { useAuth } from "../../lib/auth";
 import { formatCount } from "../../lib/formatNumber";
@@ -108,6 +109,7 @@ const MessageBubbleImpl = ({
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const { openUserProfile } = useUserProfile();
+  const { openPublicChat } = usePublicChatPreview();
   const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage, loadGroupMembers } = useMessengerActions();
   const { user: meUser } = useAuth();
   const currentUserId = meUser?.id;
@@ -129,11 +131,9 @@ const MessageBubbleImpl = ({
         const { data } = await api.get(`/users/by-username/${seg.name}`);
         openUserProfile(data);
       } else {
-        const { data } = await api.get(`/conversations/by-handle/${seg.name}`);
-        // Already a member: just activate. Else: join then activate.
-        try {
-          if (data?.id) setActiveConv(data.id);
-        } catch {}
+        // Phase 9C: route /c/handle through preview drawer
+        openPublicChat(seg.name);
+        return;
       }
     } catch (e) {
       const status = e?.response?.status;

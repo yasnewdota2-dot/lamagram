@@ -669,6 +669,11 @@ export const MessengerProvider = ({ children }) => {
     const { data } = await api.get("/messages/search", { params: { q } });
     return data;
   }, []);
+  // Phase 9C: public chats discovery (groups + channels)
+  const discoverPublic = useCallback(async (q = "", limit = 8) => {
+    const { data } = await api.get("/discover", { params: { q, limit } });
+    return data;
+  }, []);
   const starMessage = useCallback(async (messageId, convId) => {
     await api.post(`/messages/${messageId}/star`);
     if (convId) {
@@ -1156,6 +1161,7 @@ export const MessengerProvider = ({ children }) => {
       loadGroupMembers,
       searchInConversation,
       searchMessagesGlobal,
+      discoverPublic,
       starMessage,
       unstarMessage,
       listStarred,
@@ -1210,6 +1216,7 @@ export const MessengerProvider = ({ children }) => {
       loadGroupMembers,
       searchInConversation,
       searchMessagesGlobal,
+      discoverPublic,
       starMessage,
       unstarMessage,
       listStarred,

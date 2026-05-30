@@ -127,6 +127,28 @@ export const ChatPanel = ({ conversation }) => {
   const lastSeen = livePres?.last_seen || other?.last_seen;
   const otherTyping = !!(other && typingMap[other.id]);
 
+  // Phase 9C — group typing with names (uses cached groupMembers map)
+  const groupTypingLabel = React.useMemo(() => {
+    if (conversation?.kind !== "group") return null;
+    const typerIds = Object.keys(typingMap || {}).filter(
+      (uid) => typingMap[uid] && uid !== user?.id
+    );
+    if (typerIds.length === 0) return null;
+    const labelFor = (uid) =>
+      groupMembers?.[uid]?.display_name ||
+      groupMembers?.[uid]?.username ||
+      `User ${String(uid).slice(0, 6)}`;
+    if (typerIds.length === 1) {
+      return t("typingOne").replace("{a}", labelFor(typerIds[0]));
+    }
+    if (typerIds.length === 2) {
+      return t("typingTwo")
+        .replace("{a}", labelFor(typerIds[0]))
+        .replace("{b}", labelFor(typerIds[1]));
+    }
+    return t("typingPlural").replace("{n}", String(typerIds.length));
+  }, [conversation?.kind, typingMap, groupMembers, user?.id, t]);
+
   const scrollToBottom = (smooth = false) => {
     const el = scrollRef.current;
     if (!el) return;
@@ -291,9 +313,19 @@ export const ChatPanel = ({ conversation }) => {
                 )}
               </span>
             ) : isGroup ? (
-              <span data-testid="chat-header-group-members">
-                {t("membersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
-              </span>
+              groupTypingLabel ? (
+                <span
+                  className="text-[#9ABEFF] flex items-center gap-2"
+                  data-testid="chat-header-group-typing"
+                >
+                  <TypingDots />
+                  <span className="truncate">{groupTypingLabel}</span>
+                </span>
+              ) : (
+                <span data-testid="chat-header-group-members">
+                  {t("membersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
+                </span>
+              )
             ) : otherTyping ? (
               <span className="text-[#9ABEFF] flex items-center gap-2">
                 <TypingDots />

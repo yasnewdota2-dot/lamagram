@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import { I18nProvider } from "./lib/i18n";
 import { MessengerProvider } from "./lib/messenger";
 import { UserProfileProvider } from "./components/Messenger/UserProfileDrawer";
+import { PublicChatPreviewProvider } from "./components/Messenger/PublicChatPreviewDrawer";
 
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -26,7 +27,9 @@ const RequireAuth = ({ children }) => {
   if (!user) return <Navigate to="/login" replace />;
   return (
     <MessengerProvider>
-      <UserProfileProvider>{children}</UserProfileProvider>
+      <UserProfileProvider>
+        <PublicChatPreviewProvider>{children}</PublicChatPreviewProvider>
+      </UserProfileProvider>
     </MessengerProvider>
   );
 };

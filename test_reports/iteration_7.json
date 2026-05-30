@@ -1,0 +1,34 @@
+{
+  "summary": "Phase 9C frontend testing PASSED. All six Phase 9C requirements verified: (1) Sidebar 'Public chats' search section appears for query 'lam' and renders matching public chats via /api/discover, (2) clicking a public-chat search result opens the PublicChatPreviewDrawer with correct title/handle/count/description/primary-action, (3) Join button calls POST /api/conversations/join, closes drawer, and activates the conversation, (4) /c/handle mentions in message bubbles route through the drawer (mention-conv-<handle>), (5) close button AND desktop backdrop click both remove the drawer, (6) group typing names render with chat-header-group-typing in single ('Bob is typing') and two-person ('Charlie and Bob are typing') formats and revert to chat-header-group-members when typing stops.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "WebSocket /api/ws typing handler (server.py L2593)", "issue": "In group conversations the typing event is only broadcast to a single recipient: `other_id = next((p for p in conv['participants'] if p != user_id), None)`. This is the DM logic; for groups every non-sender participant should receive the typing event. Currently only the first non-sender participant in the participants array can see typing names. The frontend label code is correct; this backend bug silently limits the feature to one lucky recipient per group. Recommendation: iterate over all non-sender participants."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PublicChatPreviewDrawer primary action label", "issues": ["Spec asked for 'Join channel' / 'Join group', but the rendered label is 'Join this channel'. Behaviour is correct; only the i18n string wording differs. Minor copy nit, not blocking."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix backend group typing routing (server.py ~L2593): broadcast typing event to ALL non-sender participants, not just the first one returned by next(...). This is required for the Phase 9C group typing names feature to work for every group member.",
+    "Optional: review i18n keys for drawer primary action — current label 'Join this channel' vs spec wording 'Join channel'.",
+    "Optional: investigate console error 'React does not recognize the `%s` prop on a DOM element ... didFire didfire' that fires on app load; appears to be a framer-motion DOM attribute leak (non-blocking)."
+  ],
+  "critical_code_review_comments": [
+    "server.py L2585-L2600: typing handler uses next() which is DM-only logic but the comment/structure doesn't gate by conversation kind — silently breaks group typing.",
+    "PublicChatPreviewDrawer hook usage is solid; drawer correctly closes on join success and backdrop click."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "100%"},
+  "test_credentials": "alice/password123, bob/password123, charlie/password123 (all verified working).",
+  "seed_data_creation": "Sent two messages from alice → bob DM (client_ids TEST_mention_9c, TEST_mention_9c_2, TEST_mention_conv_v3) to validate mention parsing. Existing public channel handle 'lama' (kind=channel) used for drawer + join tests; existing group 23ba6d1c-1972-4370-b5c6-ca552867d569 (alice+bob+charlie+1 other) used for typing tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 9C frontend wiring is fully working. The only non-trivial finding is a backend bug in the WebSocket typing handler that limits group typing broadcasts to a single recipient — confirmed via direct WS connection from bob+charlie while alice viewed the group; alice received both events only because she happens to be the first non-sender participant in conv.participants. Other members of the same group would not see the typing label. Mention routing requires the '/c/handle' syntax (not '@handle') to be tagged as type='conv' in parseMentions.js — '@lama' is correctly parsed as a user mention and remains so unless prefixed with '/c/'. Drawer behaviour, search section, join flow and close interactions all verified pixel-by-pixel with screenshots.",
+  "rca of the issue": "Group typing single-recipient bug RCA: server.py uses `other_id = next((p for p in conv['participants'] if p != user_id), None)` regardless of conversation kind. For DMs this resolves to the lone peer. For groups it picks only the first non-sender participant, dropping the typing event for every other group member. Mitigation: replace with `for other_id in conv['participants']: if other_id != user_id: await manager.send_to_user(other_id, payload)`."
+}
