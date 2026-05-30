@@ -226,7 +226,7 @@ const MessageBubbleImpl = ({
         </button>
       )}
       <div
-        {...(selectionMode ? {} : lp)}
+        {...lp}
         onClick={selectionMode ? (e) => { e.stopPropagation(); onToggleSelect?.(message); } : undefined}
         className={`relative max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} ${selectionMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
         data-testid={isSelected ? `message-selected-${message.id}` : undefined}
@@ -465,6 +465,12 @@ const areEqual = (prev, next) => {
   if (prev.onDelete !== next.onDelete) return false;
   if (prev.onJumpToReply !== next.onJumpToReply) return false;
   if (prev.testId !== next.testId) return false;
+  // Phase 9C — multi-select props must invalidate memo so click/long-press
+  // closures capture the current selection state on every flip.
+  if (prev.selectionMode !== next.selectionMode) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.onToggleSelect !== next.onToggleSelect) return false;
+  if (prev.onEnterSelection !== next.onEnterSelection) return false;
   const a = prev.message, b = next.message;
   if (a === b) return true;
   return (
