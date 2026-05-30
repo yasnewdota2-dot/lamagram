@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { useI18n } from "../../lib/i18n";
+import { InviteLinkSection, PublicHandleSection } from "./InfoSections";
 import { useAuth } from "../../lib/auth";
 import { useMessengerActions } from "../../lib/messenger";
 import { UserAvatar } from "../Avatar";
@@ -444,6 +445,11 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
         </div>
 
         {error && <div className="px-5 pb-2 text-xs text-red-300" data-testid="group-info-error">{error}</div>}
+
+        <div className="px-5 pb-3 space-y-3">
+          <PublicHandleSection conversation={conversation} endpoint="groups" />
+          <InviteLinkSection conversation={conversation} endpoint="groups" />
+        </div>
 
         <div className="px-5 py-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <button onClick={handleLeave} className="w-full px-3 py-2 rounded-lg text-sm font-medium text-red-300 hover:bg-red-500/10 flex items-center justify-center gap-2" data-testid="group-info-leave">

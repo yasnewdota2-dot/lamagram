@@ -480,6 +480,27 @@ export const MessengerProvider = ({ children }) => {
     }));
     return data;
   }, []);
+  const patchConversation = useCallback((convId, patch) => {
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) => {
+        if (c.id !== convId) return c;
+        return { ...c, ...patch };
+      }),
+    }));
+  }, []);
+  const removeChannelMember = useCallback(async (convId, userId) => {
+    const target = userId === "self" ? "me" : userId;
+    // Backend route: DELETE /channels/{id}/members/{user_id}; for self, frontend must pass own user id.
+    if (target === "me") {
+      // Need own id — get from auth/me via a quick fetch
+      const me = await api.get("/auth/me");
+      await api.delete(`/channels/${convId}/members/${me.data.id}`);
+    } else {
+      await api.delete(`/channels/${convId}/members/${target}`);
+    }
+    store.set((s) => ({ ...s, conversations: s.conversations.filter((c) => c.id !== convId) }));
+  }, []);
   const joinConversation = useCallback(async ({ handle, invite_token }) => {
     const body = {};
     if (handle) body.handle = handle;
@@ -1011,6 +1032,8 @@ export const MessengerProvider = ({ children }) => {
       createChannel,
       uploadChannelAvatar,
       joinConversation,
+      patchConversation,
+      removeChannelMember,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,
@@ -1050,6 +1073,8 @@ export const MessengerProvider = ({ children }) => {
       createChannel,
       uploadChannelAvatar,
       joinConversation,
+      patchConversation,
+      removeChannelMember,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,

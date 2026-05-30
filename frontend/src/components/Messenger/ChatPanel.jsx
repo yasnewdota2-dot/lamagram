@@ -18,6 +18,7 @@ import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
 import { ForwardDialog } from "./ForwardDialog";
 import { GroupInfoDialog } from "./GroupDialogs";
+import { ChannelInfoDialog } from "./ChannelInfoDialog";
 import { GroupAvatar } from "./GroupAvatar";
 import { StarredView } from "./StarredView";
 import { ChatSearchBar } from "./ChatSearchBar";
@@ -74,6 +75,7 @@ export const ChatPanel = ({ conversation }) => {
   const [toast, setToast] = useState("");
   const [forwardSource, setForwardSource] = useState(null);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
+  const [channelInfoOpen, setChannelInfoOpen] = useState(false);
   const [savedTab, setSavedTab] = useState("notes"); // 'notes' | 'starred'
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -237,8 +239,8 @@ export const ChatPanel = ({ conversation }) => {
           </div>
         )}
         <div
-          className={`min-w-0 flex-1 ${isGroup ? "cursor-pointer" : ""}`}
-          onClick={() => isGroup && setGroupInfoOpen(true)}
+          className={`min-w-0 flex-1 ${(isGroup || isChannel) ? "cursor-pointer" : ""}`}
+          onClick={() => { if (isGroup) setGroupInfoOpen(true); else if (isChannel) setChannelInfoOpen(true); }}
           data-testid={isGroup ? "chat-header-group-title-trigger" : undefined}
         >
           <div className="text-white font-semibold truncate flex items-center gap-2" data-testid="chat-header-name">
@@ -477,6 +479,13 @@ export const ChatPanel = ({ conversation }) => {
           setToast(msg);
         }}
       />
+      {isChannel && (
+        <ChannelInfoDialog
+          open={channelInfoOpen}
+          onOpenChange={setChannelInfoOpen}
+          conversation={conversation}
+        />
+      )}
       {isGroup && (
         <GroupInfoDialog
           open={groupInfoOpen}
