@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, Upload, MessageSquareText } from "lucide-react";
+import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -16,6 +16,9 @@ import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
 import { ForwardDialog } from "./ForwardDialog";
+import { GroupInfoDialog } from "./GroupDialogs";
+import { GroupAvatar } from "./GroupAvatar";
+import { StarredView } from "./StarredView";
 import { SavedAvatar } from "./ChatList";
 import { formatRelative, isWithinMinutes } from "../../lib/time";
 
@@ -66,6 +69,8 @@ export const ChatPanel = ({ conversation }) => {
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState("");
   const [forwardSource, setForwardSource] = useState(null);
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false);
+  const [savedTab, setSavedTab] = useState("notes"); // 'notes' | 'starred'
 
   const handleReply = React.useCallback(
     (m) => setReplyTarget(convId, m),
@@ -179,6 +184,7 @@ export const ChatPanel = ({ conversation }) => {
   if (!conversation) return <EmptyState />;
 
   const isSaved = conversation.kind === "saved";
+  const isGroup = conversation.kind === "group";
 
   return (
     <div
@@ -196,6 +202,8 @@ export const ChatPanel = ({ conversation }) => {
       >
         {isSaved ? (
           <SavedAvatar size={42} />
+        ) : isGroup ? (
+          <GroupAvatar group={conversation.group} size={42} testId="chat-header-group-avatar" />
         ) : (
           <div className="relative">
             <UserAvatar user={other} size={42} testId="chat-header-avatar" />
@@ -204,13 +212,21 @@ export const ChatPanel = ({ conversation }) => {
             </span>
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        <div
+          className={`min-w-0 flex-1 ${isGroup ? "cursor-pointer" : ""}`}
+          onClick={() => isGroup && setGroupInfoOpen(true)}
+          data-testid={isGroup ? "chat-header-group-title-trigger" : undefined}
+        >
           <div className="text-white font-semibold truncate flex items-center gap-2" data-testid="chat-header-name">
-            {isSaved ? t("savedMessages") : (other?.display_name || other?.username)}
+            {isSaved ? t("savedMessages") : isGroup ? (conversation.group?.title || "Group") : (other?.display_name || other?.username)}
           </div>
           <div className="text-xs text-[var(--gm-text-muted)] truncate" data-testid="chat-header-presence">
             {isSaved ? (
               <span>{t("savedSubtitle")}</span>
+            ) : isGroup ? (
+              <span data-testid="chat-header-group-members">
+                {t("membersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
+              </span>
             ) : otherTyping ? (
               <span className="text-[#9ABEFF] flex items-center gap-2">
                 <TypingDots />
@@ -340,6 +356,13 @@ export const ChatPanel = ({ conversation }) => {
           setToast(msg);
         }}
       />
+      {isGroup && (
+        <GroupInfoDialog
+          open={groupInfoOpen}
+          onOpenChange={setGroupInfoOpen}
+          conversation={conversation}
+        />
+      )}
     </div>
   );
 };
