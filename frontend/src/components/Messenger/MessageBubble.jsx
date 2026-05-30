@@ -198,7 +198,7 @@ const MessageBubbleImpl = ({
             <span data-testid="message-edited-marker">{t("edited")}</span>
           )}
           <span>{formatTime(message.created_at)}</span>
-          {mine && !isPending && !isFailed && <Ticks status={message.status} />}
+          {mine && !isPending && !isFailed && conversation?.kind !== "channel" && <Ticks status={message.status} />}
           {isPending && <span className="opacity-70">·</span>}
           {isFailed && <span className="text-red-300">!</span>}
         </div>

@@ -453,6 +453,33 @@ export const MessengerProvider = ({ children }) => {
     });
     return data;
   }, []);
+  // Phase 6: channels
+  const createChannel = useCallback(async ({ title, description, is_public, handle, participant_ids }) => {
+    const body = { title, description, is_public, handle };
+    if (participant_ids && participant_ids.length) body.participant_ids = participant_ids;
+    const { data } = await api.post("/channels", body);
+    store.set((s) => {
+      if (s.conversations.find((c) => c.id === data.id)) return s;
+      const saved = s.conversations.find((c) => c.kind === "saved");
+      const rest = s.conversations.filter((c) => c.kind !== "saved");
+      return { ...s, conversations: saved ? [saved, data, ...rest] : [data, ...rest] };
+    });
+    return data;
+  }, []);
+  const uploadChannelAvatar = useCallback(async (convId, file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const { data } = await api.post(`/channels/${convId}/avatar`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) =>
+        c.id === convId ? { ...c, group: c.group ? { ...c.group, avatar_url: data?.group?.avatar_url || data.avatar_url } : c.group } : c
+      ),
+    }));
+    return data;
+  }, []);
   const updateGroup = useCallback(async (convId, patch) => {
     const { data } = await api.patch(`/groups/${convId}`, patch);
     store.set((s) => ({
@@ -961,6 +988,8 @@ export const MessengerProvider = ({ children }) => {
       setEditTarget,
       clearComposerState,
       createGroup,
+      createChannel,
+      uploadChannelAvatar,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,
@@ -997,6 +1026,8 @@ export const MessengerProvider = ({ children }) => {
       setEditTarget,
       clearComposerState,
       createGroup,
+      createChannel,
+      uploadChannelAvatar,
       updateGroup,
       uploadGroupAvatar,
       addGroupMembers,

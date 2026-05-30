@@ -1,6 +1,6 @@
 import React, { memo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bookmark, Pin, BellOff, MoreHorizontal, PinOff, Bell, CheckCheck } from "lucide-react";
+import { Bookmark, Pin, BellOff, MoreHorizontal, PinOff, Bell, CheckCheck, Megaphone } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -59,6 +59,8 @@ const ChatRow = memo(
   function ChatRow({ conversation, meId, isActive, lang, t, setActiveConv, setPinned, setMuted, markRead }) {
     const c = conversation;
     const isSaved = c.kind === "saved";
+    const isChannel = c.kind === "channel";
+    const isGroup = c.kind === "group";
     const other = c.other_user;
     const typingMap = useTypingForConv(isSaved ? null : c.id);
     const typing = !isSaved && other && typingMap[other.id];
@@ -67,6 +69,8 @@ const ChatRow = memo(
 
     const title = isSaved
       ? t("savedMessages")
+      : isChannel
+      ? (c.group?.title || "Channel")
       : c.kind === "group"
       ? (c.group?.title || "Group")
       : other?.display_name || other?.username || "Unknown";
@@ -132,6 +136,9 @@ const ChatRow = memo(
           <div className="flex items-center justify-between gap-2">
             <div className="text-white font-medium text-sm truncate flex items-center gap-1.5">
               {title}
+              {isChannel && (
+                <Megaphone className="w-3 h-3 text-[#9ABEFF] shrink-0" data-testid={`chat-channel-badge-${testIdSlug}`} />
+              )}
               {isSaved && (
                 <span
                   className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex items-center gap-0.5"
@@ -170,7 +177,16 @@ const ChatRow = memo(
               }`}
               style={{ unicodeBidi: "plaintext" }}
             >
-              {lastTextRaw}
+              {c.is_public && c.handle && !lastTextRaw ? (
+                <span className="text-white/40">@{c.handle}</span>
+              ) : (
+                <>
+                  {c.is_public && c.handle && (
+                    <span className="text-white/40 mr-1.5">@{c.handle} ·</span>
+                  )}
+                  {lastTextRaw}
+                </>
+              )}
             </div>
             {c.unread_count > 0 && (
               <span

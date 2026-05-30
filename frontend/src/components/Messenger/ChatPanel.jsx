@@ -207,6 +207,8 @@ export const ChatPanel = ({ conversation }) => {
 
   const isSaved = conversation.kind === "saved";
   const isGroup = conversation.kind === "group";
+  const isChannel = conversation.kind === "channel";
+  const isAdmin = !!conversation.is_admin;
 
   return (
     <div
@@ -240,11 +242,27 @@ export const ChatPanel = ({ conversation }) => {
           data-testid={isGroup ? "chat-header-group-title-trigger" : undefined}
         >
           <div className="text-white font-semibold truncate flex items-center gap-2" data-testid="chat-header-name">
-            {isSaved ? t("savedMessages") : isGroup ? (conversation.group?.title || "Group") : (other?.display_name || other?.username)}
+            {isSaved ? t("savedMessages") : (isGroup || isChannel) ? (conversation.group?.title || (isChannel ? "Channel" : "Group")) : (other?.display_name || other?.username)}
+            {isChannel && (
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md flex items-center gap-1"
+                style={{ background: "rgba(59,158,255,0.14)", border: "1px solid rgba(59,158,255,0.32)", color: "#9ABEFF" }}
+                data-testid="chat-header-channel-badge">
+                {t("channel") || "Channel"}
+              </span>
+            )}
           </div>
           <div className="text-xs text-[var(--gm-text-muted)] truncate" data-testid="chat-header-presence">
             {isSaved ? (
               <span>{t("savedSubtitle")}</span>
+            ) : isChannel ? (
+              <span className="flex items-center gap-2" data-testid="chat-header-channel-subtitle">
+                <span data-testid="chat-header-subscribers">
+                  {t("subscribersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
+                </span>
+                {conversation.is_public && conversation.handle && (
+                  <span className="text-white/40">· @{conversation.handle}</span>
+                )}
+              </span>
             ) : isGroup ? (
               <span data-testid="chat-header-group-members">
                 {t("membersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
@@ -405,7 +423,16 @@ export const ChatPanel = ({ conversation }) => {
       )}
 
       {/* Composer */}
-      {!(isSaved && savedTab === "starred") && (
+      {isChannel && !isAdmin ? (
+        <div
+          className="px-5 py-3 text-center text-sm text-white/65 border-t border-white/10 flex items-center justify-center gap-2"
+          style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}
+          data-testid="channel-post-locked"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+          {t("onlyAdminsCanPost")}
+        </div>
+      ) : !(isSaved && savedTab === "starred") && (
         <Composer
           conversationId={convId}
           onUploadError={(msg) => {
