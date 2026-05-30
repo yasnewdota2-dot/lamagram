@@ -72,9 +72,21 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 - [x] i18n EN+FA additions: photo, video, file, voice, recording, micDenied, dropFile, fileTooLarge, uploadFailed, unsupportedType, searchEmoji, sayHi/sayHiSub, newMessages.
 - [x] 13 new backend tests + 49 regression all pass; frontend Playwright verified composer buttons, image upload + WS receive within 2 s, lightbox open/close, emoji-big rendering (48 px), document.title sync, localized sidebar preview, voice recorder UI.
 
+## What's implemented (2026-02 — Phase 4 — Saved Messages + Username-first Search)
+- [x] `POST /api/conversations/saved` (idempotent) creates/returns the user's self-conversation with `kind="saved"` and single participant; supports sending text + media messages to self.
+- [x] `GET /api/conversations` partitions saved+dm and returns the saved one first (server-enforced pinning).
+- [x] `GET /api/users/by-username/{username}` returns user public profile (case-insensitive); 404 on miss.
+- [x] `GET /api/users/search?q=@prefix` switches to username-prefix mode (re.escape safe); bare `q=` falls back to username-prefix OR display_name-substring.
+- [x] Frontend: `SavedAvatar` (bookmark gradient) exported from `ChatList.jsx`; saved chat row always pinned with PINNED badge.
+- [x] `ChatPanel` header for saved: title = "Saved Messages", subtitle = "Your personal cloud", no online dot. Regular DM header appends `· @username` next to presence.
+- [x] `Settings`: shows `@username` with copy-to-clipboard button (toast on copy).
+- [x] Sidebar search input localized placeholder ("Search by @username or name"); typing `@` shows `Searching usernames` hint chip.
+- [x] i18n EN+FA additions: savedMessages, savedSubtitle, pinned, searchPlaceholder2, searchingUsernames, usernameCopied. FA: 'پیام‌های ذخیره‌شده', 'فضای ابری شخصی شما', 'جستجوی یوزرنیم', 'یوزرنیم کپی شد'.
+- [x] 10 new Phase 4 backend tests + 72/72 full regression pass; frontend Playwright verified saved-first ordering, header copy, message persist, FA RTL toggle, clipboard write of @username, '· @username' DM header suffix.
+
 ## Prioritized backlog
 
-### P0 — next phase (Phase 4: collaboration)
+### P0 — next phase (Phase 5: collaboration)
 - Reply / quote a message inline
 - Forward to another conversation
 - Message delete (sender) / edit (text only)
