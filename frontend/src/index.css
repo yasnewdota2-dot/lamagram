@@ -267,8 +267,20 @@ body[dir="rtl"] .gm-field label { left: auto; right: 16px; }
 
 /* Chunk7A mobile */
 @media (max-width: 767px) {
-  /* Prevent iOS rubber-band scrolling on body */
-  html, body, #root { height: 100%; overflow: hidden; }
+  /*
+   * Prevent iOS rubber-band scrolling — but ONLY on the messenger Home
+   * page (it manages its own internal scrolling). Other routes like
+   * /settings must remain page-scrollable on mobile.
+   */
+  html:has(body [data-testid="home-page"]),
+  body:has([data-testid="home-page"]) {
+    height: 100%;
+    overflow: hidden;
+  }
+  body:has([data-testid="home-page"]) #root {
+    height: 100%;
+    overflow: hidden;
+  }
   /* Composer safe-area for iOS notch / home indicator */
   [data-testid="message-composer"], [data-testid="channel-post-locked"] {
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
@@ -524,4 +536,113 @@ html, body { background: var(--bg-base) !important; color: var(--text-primary); 
   display: flex;
   justify-content: center;
   width: 100%;
+}
+
+/* ===========================================================
+ * Phase 8A Bug 2 — extra light-mode contrast fixes
+ * Targets hardcoded text/background colors not caught by
+ * the main override layer (utility classes use exact-match
+ * selectors, so #C9B8FF, rgba(255,255,255,0.10+) etc. miss).
+ * =========================================================== */
+
+/* PINNED pill: dark purple text on light bg */
+:root[data-theme="light"] .text-\[\#C9B8FF\] { color: #5B43C9 !important; }
+/* Soft-blue chips (Settings copy/edit/saved indicators) */
+:root[data-theme="light"] .text-\[\#9ABEFF\] { color: #1E5BD6 !important; }
+/* Soft-purple chips */
+:root[data-theme="light"] .text-\[\#A78BFA\] { color: #5B43C9 !important; }
+/* Danger / error text (Settings error banner, logout link) */
+:root[data-theme="light"] .text-\[\#FFB4B4\] { color: #B7262B !important; }
+:root[data-theme="light"] .text-red-300 { color: #B7262B !important; }
+
+/* Inline rgba(255,255,255,0.10-0.30) backgrounds — white tint that
+   becomes invisible on light surfaces. Map to neutral light-ink alpha. */
+:root[data-theme="light"] [style*="rgba(255,255,255,0.10"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.12"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.14"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.15"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.16"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.18"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.20"],
+:root[data-theme="light"] [style*="rgba(255,255,255,0.22"] {
+  background-color: rgba(15,20,40,0.06) !important;
+}
+
+/* Placeholder text inside inputs / textareas */
+:root[data-theme="light"] .placeholder-white\/40::placeholder,
+:root[data-theme="light"] .placeholder-white\/50::placeholder,
+:root[data-theme="light"] .placeholder-white\/60::placeholder {
+  color: rgba(15,20,40,0.45) !important;
+}
+:root[data-theme="light"] input::placeholder,
+:root[data-theme="light"] textarea::placeholder {
+  color: rgba(15,20,40,0.45) !important;
+}
+
+/* Settings page contains a few hardcoded chip backgrounds: red/pink error,
+   purple updated, blue copied. Make their backgrounds slightly more
+   saturated on a light bg so the colored borders remain visible. */
+:root[data-theme="light"] [style*="rgba(255,80,80,0.08"],
+:root[data-theme="light"] [style*="rgba(255,80,80,0.10"] {
+  background-color: rgba(229,72,77,0.10) !important;
+}
+:root[data-theme="light"] [style*="rgba(255,80,80,0.25"],
+:root[data-theme="light"] [style*="rgba(255,80,80,0.30"] {
+  border-color: rgba(229,72,77,0.45) !important;
+}
+:root[data-theme="light"] [style*="rgba(167,139,250,0.10"],
+:root[data-theme="light"] [style*="rgba(167,139,250,0.12"],
+:root[data-theme="light"] [style*="rgba(167,139,250,0.14"] {
+  background-color: rgba(124,92,250,0.10) !important;
+}
+:root[data-theme="light"] [style*="rgba(167,139,250,0.28"],
+:root[data-theme="light"] [style*="rgba(167,139,250,0.30"],
+:root[data-theme="light"] [style*="rgba(167,139,250,0.32"] {
+  border-color: rgba(124,92,250,0.40) !important;
+}
+:root[data-theme="light"] [style*="rgba(59,158,255,0.10"],
+:root[data-theme="light"] [style*="rgba(59,158,255,0.18"] {
+  background-color: rgba(45,127,255,0.10) !important;
+}
+:root[data-theme="light"] [style*="rgba(59,158,255,0.28"],
+:root[data-theme="light"] [style*="rgba(59,158,255,0.35"] {
+  border-color: rgba(45,127,255,0.40) !important;
+}
+:root[data-theme="light"] [style*="rgba(59,158,255,0.55"] {
+  /* keep gradient glow box-shadow visible but softer */
+  /* no-op, allowed to bleed through */
+}
+
+/* Waveform "unfilled" bars: rgba(255,255,255,0.22) → dim ink */
+:root[data-theme="light"] [style*="background: rgba(255,255,255,0.22)"],
+:root[data-theme="light"] [style*="background:rgba(255,255,255,0.22)"] {
+  background-color: rgba(15,20,40,0.20) !important;
+}
+
+/* gm-field (floating-label inputs/textareas) */
+:root[data-theme="light"] .gm-field input,
+:root[data-theme="light"] .gm-field textarea {
+  background: var(--bg-glass) !important;
+  border-color: var(--border-glass) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .gm-field input:focus,
+:root[data-theme="light"] .gm-field textarea:focus {
+  background: rgba(45,127,255,0.05) !important;
+  border-color: rgba(45,127,255,0.55) !important;
+  box-shadow: 0 0 0 4px rgba(45,127,255,0.12), 0 0 24px rgba(45,127,255,0.10) !important;
+}
+:root[data-theme="light"] .gm-field label {
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light"] .gm-field input:focus + label,
+:root[data-theme="light"] .gm-field input:not(:placeholder-shown) + label,
+:root[data-theme="light"] .gm-field textarea:focus + label,
+:root[data-theme="light"] .gm-field textarea:not(:placeholder-shown) + label {
+  color: #1E5BD6 !important;
+}
+
+/* gm-chip (pill labels) */
+:root[data-theme="light"] .gm-chip {
+  color: var(--text-secondary) !important;
 }
