@@ -1282,7 +1282,7 @@ async def unmute_conversation(conv_id: str, current_user: dict = Depends(get_cur
 
 class UpdateUsernameRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    username: str = Field(..., min_length=3, max_length=20)
+    username: str = Field(..., max_length=100)
 
 @api_router.patch("/users/me/username")
 async def update_username(body: UpdateUsernameRequest, current_user: dict = Depends(get_current_user)):

@@ -1,12 +1,14 @@
 import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Camera, Check, LogOut, Languages } from "lucide-react";
+import { ArrowLeft, Camera, Check, LogOut, Languages, Pencil, X } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { api, formatApiError } from "../lib/api";
 import { GlassBackground } from "../components/GlassBackground";
 import { UserAvatar } from "../components/Avatar";
+
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
@@ -21,6 +23,53 @@ export default function Settings() {
   const [usernameCopiedAt, setUsernameCopiedAt] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+
+  // Username inline edit (TASK C)
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
+  const [usernameSavedAt, setUsernameSavedAt] = useState(null);
+
+  const startEditUsername = () => {
+    setUsernameDraft(user?.username || "");
+    setUsernameError("");
+    setEditingUsername(true);
+  };
+  const cancelEditUsername = () => {
+    setEditingUsername(false);
+    setUsernameDraft("");
+    setUsernameError("");
+  };
+  const saveUsername = async () => {
+    const next = (usernameDraft || "").trim().toLowerCase();
+    if (!USERNAME_RE.test(next)) {
+      setUsernameError(t("usernameInvalidFormat"));
+      return;
+    }
+    if (next === user?.username) {
+      setUsernameError(t("sameAsCurrent"));
+      return;
+    }
+    setUsernameSaving(true);
+    setUsernameError("");
+    try {
+      const { data } = await api.patch("/users/me/username", { username: next });
+      setUser(data);
+      setEditingUsername(false);
+      setUsernameSavedAt(Date.now());
+      setTimeout(() => setUsernameSavedAt((v) => (Date.now() - v > 1800 ? null : v)), 2200);
+    } catch (err) {
+      const code = err?.response?.status;
+      const detail = err?.response?.data?.detail || "";
+      if (code === 409) setUsernameError(t("usernameAlreadyTaken"));
+      else if (code === 400 && /same/i.test(detail)) setUsernameError(t("sameAsCurrent"));
+      else if (code === 400) setUsernameError(t("usernameInvalidFormat"));
+      else setUsernameError(formatApiError(detail) || err.message);
+    } finally {
+      setUsernameSaving(false);
+    }
+  };
 
   const saveProfile = async (e) => {
     e.preventDefault();
@@ -126,63 +175,138 @@ export default function Settings() {
               <div className="text-xl text-white font-semibold" data-testid="settings-display-name">
                 {user?.display_name || user?.username}
               </div>
-              <div className="text-sm text-[var(--gm-text-muted)] flex items-center gap-2" data-testid="settings-username">
-                <span>@{user?.username}</span>
-                <button
-                  onClick={async () => {
-                    const text = `@${user?.username}`;
-                    let ok = false;
-                    try {
-                      if (navigator.clipboard && window.isSecureContext) {
-                        await navigator.clipboard.writeText(text);
-                        ok = true;
-                      }
-                    } catch {
-                      ok = false;
-                    }
-                    if (!ok) {
-                      try {
-                        const ta = document.createElement("textarea");
-                        ta.value = text;
-                        ta.setAttribute("readonly", "");
-                        ta.style.position = "fixed";
-                        ta.style.top = "0";
-                        ta.style.left = "0";
-                        ta.style.width = "1px";
-                        ta.style.height = "1px";
-                        ta.style.opacity = "0";
-                        document.body.appendChild(ta);
-                        ta.focus();
-                        ta.select();
-                        ta.setSelectionRange(0, text.length);
-                        ok = document.execCommand("copy");
-                        document.body.removeChild(ta);
-                      } catch {
-                        ok = false;
-                      }
-                    }
-                    if (ok) {
-                      setUsernameCopiedAt(Date.now());
-                      setError("");
-                    } else {
-                      setError("Copy failed");
-                    }
-                  }}
-                  className="p-1 rounded-md hover:bg-white/10 text-[#9ABEFF]"
-                  aria-label="copy username"
-                  data-testid="copy-username-button"
-                  title={t("usernameCopied")}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-                {usernameCopiedAt && (
-                  <span
-                    className="text-[10px] text-[#9ABEFF] px-1.5 py-0.5 rounded-md"
-                    style={{ background: "rgba(59,158,255,0.10)", border: "1px solid rgba(59,158,255,0.28)" }}
-                    data-testid="username-copied-indicator"
-                  >
-                    {t("usernameCopied")}
-                  </span>
+              <div className="text-sm text-[var(--gm-text-muted)] flex items-center gap-2 flex-wrap" data-testid="settings-username">
+                {!editingUsername && (
+                  <>
+                    <span>@{user?.username}</span>
+                    <button
+                      onClick={async () => {
+                        const text = `@${user?.username}`;
+                        let ok = false;
+                        try {
+                          if (navigator.clipboard && window.isSecureContext) {
+                            await navigator.clipboard.writeText(text);
+                            ok = true;
+                          }
+                        } catch {
+                          ok = false;
+                        }
+                        if (!ok) {
+                          try {
+                            const ta = document.createElement("textarea");
+                            ta.value = text;
+                            ta.setAttribute("readonly", "");
+                            ta.style.position = "fixed";
+                            ta.style.top = "0";
+                            ta.style.left = "0";
+                            ta.style.width = "1px";
+                            ta.style.height = "1px";
+                            ta.style.opacity = "0";
+                            document.body.appendChild(ta);
+                            ta.focus();
+                            ta.select();
+                            ta.setSelectionRange(0, text.length);
+                            ok = document.execCommand("copy");
+                            document.body.removeChild(ta);
+                          } catch {
+                            ok = false;
+                          }
+                        }
+                        if (ok) {
+                          setUsernameCopiedAt(Date.now());
+                          setError("");
+                        } else {
+                          setError("Copy failed");
+                        }
+                      }}
+                      className="p-1 rounded-md hover:bg-white/10 text-[#9ABEFF]"
+                      aria-label="copy username"
+                      data-testid="copy-username-button"
+                      title={t("usernameCopied")}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button
+                      onClick={startEditUsername}
+                      className="p-1 rounded-md hover:bg-white/10 text-[#9ABEFF]"
+                      aria-label={t("editUsername")}
+                      title={t("editUsername")}
+                      data-testid="edit-username-button"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    {usernameCopiedAt && (
+                      <span
+                        className="text-[10px] text-[#9ABEFF] px-1.5 py-0.5 rounded-md"
+                        style={{ background: "rgba(59,158,255,0.10)", border: "1px solid rgba(59,158,255,0.28)" }}
+                        data-testid="username-copied-indicator"
+                      >
+                        {t("usernameCopied")}
+                      </span>
+                    )}
+                    {usernameSavedAt && (
+                      <span
+                        className="text-[10px] text-[#A78BFA] px-1.5 py-0.5 rounded-md"
+                        style={{ background: "rgba(167,139,250,0.10)", border: "1px solid rgba(167,139,250,0.32)" }}
+                        data-testid="username-updated-indicator"
+                      >
+                        {t("usernameUpdated")}
+                      </span>
+                    )}
+                  </>
+                )}
+                {editingUsername && (
+                  <div className="flex items-center gap-2 flex-wrap" data-testid="username-edit-row">
+                    <span className="text-[#9ABEFF]">@</span>
+                    <input
+                      type="text"
+                      value={usernameDraft}
+                      onChange={(e) => {
+                        setUsernameDraft(e.target.value.toLowerCase());
+                        if (usernameError) setUsernameError("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); saveUsername(); }
+                        else if (e.key === "Escape") { e.preventDefault(); cancelEditUsername(); }
+                      }}
+                      autoFocus
+                      maxLength={20}
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="bg-white/5 border border-white/15 rounded-lg px-2 py-1 text-sm text-white outline-none focus:border-[#3B9EFF]"
+                      style={{ minWidth: 160 }}
+                      placeholder="username"
+                      data-testid="username-edit-input"
+                    />
+                    <button
+                      onClick={saveUsername}
+                      disabled={usernameSaving}
+                      className="px-2 py-1 rounded-lg text-xs text-white"
+                      style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)" }}
+                      data-testid="username-save-button"
+                      title={t("save")}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={cancelEditUsername}
+                      disabled={usernameSaving}
+                      className="px-2 py-1 rounded-lg text-xs text-white/70 hover:bg-white/10"
+                      data-testid="username-cancel-button"
+                      title={t("cancel")}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    {usernameError && (
+                      <span
+                        className="text-[11px] text-red-300 px-1.5 py-0.5 rounded-md"
+                        style={{ background: "rgba(255,80,80,0.10)", border: "1px solid rgba(255,80,80,0.30)" }}
+                        data-testid="username-edit-error"
+                      >
+                        {usernameError}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               {uploading && (
