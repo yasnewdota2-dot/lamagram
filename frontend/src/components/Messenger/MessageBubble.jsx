@@ -34,6 +34,7 @@ import { useUserProfile } from "./UserProfileDrawer";
 import { useMessengerActions } from "../../lib/messenger";
 import { useAuth } from "../../lib/auth";
 import { formatCount } from "../../lib/formatNumber";
+import { UserAvatar } from "../Avatar";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
 
@@ -200,9 +201,23 @@ const MessageBubbleImpl = ({
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`group relative flex w-full ${mine ? "justify-end" : "justify-start"} px-2`}
+      className={`group relative flex w-full ${mine ? "justify-end" : "justify-start"} px-2 ${conversation?.kind === "group" && !mine ? "ps-12" : ""}`}
       data-testid={testId || `message-${message.id}`}
     >
+      {conversation?.kind === "group" && !mine && showAvatar && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const m = groupMembers?.[message.sender_id];
+            openUserProfile(m || { id: message.sender_id });
+          }}
+          className="absolute bottom-0 start-2 rounded-full"
+          aria-label="open profile"
+          data-testid="group-sender-avatar"
+        >
+          <UserAvatar user={groupMembers?.[message.sender_id] || { id: message.sender_id }} size={32} />
+        </button>
+      )}
       <div
         {...lp}
         className={`max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"}`}

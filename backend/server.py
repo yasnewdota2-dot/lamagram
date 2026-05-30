@@ -1418,7 +1418,7 @@ async def update_username(body: UpdateUsernameRequest, current_user: dict = Depe
 class CreateGroupRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: str = Field(..., min_length=3, max_length=50)
-    participant_ids: List[str] = Field(..., min_length=2, max_length=200)
+    participant_ids: List[str] = Field(default_factory=list, max_length=200)
     description: Optional[str] = Field(None, max_length=200)
 
 class UpdateGroupRequest(BaseModel):
@@ -2197,16 +2197,19 @@ async def discover(q: str = "", limit: int = 20, current_user: dict = Depends(ge
         out = [_discover_item(c) for c in docs if me_id not in c.get("participants", [])][:limit]
         return out
     qn = q.strip().lower()
-    # Build OR query: handle exact, handle prefix, title substring
     safe = re.escape(qn)
-    cursor = db.conversations.find({
-        **base,
-        "$or": [
-            {"handle": qn},
-            {"handle": {"$regex": f"^{safe}", "$options": "i"}},
-            {"title": {"$regex": safe, "$options": "i"}},
-        ],
-    })
+    # Token-based: split into words, match ANY token in title OR handle.
+    tokens = [tok for tok in re.split(r"\s+", qn) if tok]
+    or_clauses = [
+        {"handle": qn},
+        {"handle": {"$regex": safe, "$options": "i"}},     # substring on handle (was prefix)
+        {"title": {"$regex": safe, "$options": "i"}},
+    ]
+    for tok in tokens:
+        safe_tok = re.escape(tok)
+        or_clauses.append({"title": {"$regex": safe_tok, "$options": "i"}})
+        or_clauses.append({"handle": {"$regex": safe_tok, "$options": "i"}})
+    cursor = db.conversations.find({**base, "$or": or_clauses})
     docs = await cursor.to_list(200)
     # Rank: handle exact > handle prefix > title match
     def rank(c):
