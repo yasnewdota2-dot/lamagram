@@ -557,6 +557,10 @@ export const ChatPanel = ({ conversation }) => {
                     onDelete={handleDelete}
                     onJumpToReply={handleJumpToReply}
                     testId={`message-${m.id}`}
+                    selectionMode={selectionMode}
+                    isSelected={!!selectedMap[m.id]}
+                    onToggleSelect={toggleSelect}
+                    onEnterSelection={enterSelection}
                   />
                 </div>
               </React.Fragment>

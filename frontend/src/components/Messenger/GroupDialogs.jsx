@@ -565,6 +565,22 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
             <LogOut className="w-4 h-4" /> {t("leaveGroup")}
           </button>
         </div>
+        {editRoleFor && (
+          <EditRoleModal
+            member={editRoleFor}
+            kind="group"
+            onClose={() => setEditRoleFor(null)}
+            onSave={async ({ title, permissions }) => {
+              try {
+                await updateAdminRole(convId, "group", editRoleFor.id, { title, permissions });
+                setMembers((prev) => prev.map((m) =>
+                  m.id === editRoleFor.id ? { ...m, admin_title: (title || "").trim() || undefined, admin_permissions: permissions } : m
+                ));
+                setEditRoleFor(null);
+              } catch (e) { setError(e?.response?.data?.detail || e.message); }
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
