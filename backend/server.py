@@ -39,7 +39,7 @@ MEDIA_DIR = UPLOAD_DIR / 'media'
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
-USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
+USERNAME_RE = re.compile(r'^[a-z0-9_]{3,32}$')
 
 ALLOWED_MIMES = {
     "image": {"image/jpeg", "image/png", "image/webp", "image/gif"},
@@ -1338,7 +1338,7 @@ class UpdateUsernameRequest(BaseModel):
 @api_router.patch("/users/me/username")
 async def update_username(body: UpdateUsernameRequest, current_user: dict = Depends(get_current_user)):
     new_un = (body.username or "").strip().lower()
-    if not re.fullmatch(r"[a-z0-9_]{3,20}", new_un):
+    if not re.fullmatch(r"[a-z0-9_]{3,32}", new_un):
         raise HTTPException(400, "Invalid username format")
     if new_un == current_user["username"]:
         raise HTTPException(400, "Same as current username")

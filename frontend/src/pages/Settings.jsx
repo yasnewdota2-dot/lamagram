@@ -8,7 +8,7 @@ import { api, formatApiError } from "../lib/api";
 import { GlassBackground } from "../components/GlassBackground";
 import { UserAvatar } from "../components/Avatar";
 
-const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
