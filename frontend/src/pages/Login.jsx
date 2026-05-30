@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate, Navigate } from "react-router-dom";
+import { Link, useNavigate, Navigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { LogIn, Sparkles } from "lucide-react";
 import { useAuth } from "../lib/auth";
@@ -12,6 +12,8 @@ export default function Login() {
   const { user, login, loading } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const safeReturn = (() => { const p = searchParams.get("return"); if (!p || typeof p !== "string") return null; if (!p.startsWith("/")) return null; if (p.startsWith("//")) return null; return p; })();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +27,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(username.trim().toLowerCase(), password);
-      navigate("/", { replace: true });
+      navigate(safeReturn || "/", { replace: true });
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally {
@@ -118,7 +120,7 @@ export default function Login() {
 
           <div className="mt-7 text-center text-sm text-[var(--gm-text-muted)]">
             {t("noAccount")}{" "}
-            <Link to="/signup" className="gm-link" data-testid="go-to-signup-link">
+            <Link to={`/signup${safeReturn ? `?return=${encodeURIComponent(safeReturn)}` : ""}`} className="gm-link" data-testid="go-to-signup-link">
               {t("signup")}
             </Link>
           </div>

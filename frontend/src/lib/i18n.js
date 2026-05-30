@@ -191,6 +191,10 @@ const DICTIONARY = {
     saved: "Saved",
     yes: "Yes",
     channel: "Channel",
+    joining: "Joining…",
+    linkInvalidLong: "This invite link is invalid or expired",
+    handleNotFoundLong: "This handle is not a public group or channel",
+    goToHome: "Go to Home",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -382,6 +386,10 @@ const DICTIONARY = {
     saved: "ذخیره شد",
     yes: "بله",
     channel: "کانال",
+    joining: "در حال پیوستن…",
+    linkInvalidLong: "این لینک دعوت نامعتبر یا منقضی شده است",
+    handleNotFoundLong: "این آدرس به گروه یا کانال عمومی متعلق نیست",
+    goToHome: "بازگشت به خانه",
   },
 };
 

@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import { JoinByTokenPage, JoinByHandlePage } from "./pages/DeepLink";
 
 const Loader = () => (
   <div className="min-h-screen flex items-center justify-center" data-testid="app-loading">
@@ -33,6 +34,8 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/join/:token" element={<JoinByTokenPage />} />
+              <Route path="/c/:handle" element={<JoinByHandlePage />} />
               <Route
                 path="/"
                 element={
