@@ -247,6 +247,9 @@ const DICTIONARY = {
     lastMsgLocation: "📍 Location",
     locationCoords: "Lat {lat}, Lng {lng}",
     banFromChannelLabel: "Ban from channel",
+    deleteMessageTitle: "Delete message?",
+    areYouSure: "Are you sure?",
+    searchPlain: "Search",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -494,6 +497,9 @@ const DICTIONARY = {
     lastMsgLocation: "📍 موقعیت",
     locationCoords: "عرض {lat}، طول {lng}",
     banFromChannelLabel: "بن از کانال",
+    deleteMessageTitle: "حذف پیام؟",
+    areYouSure: "مطمئن هستید؟",
+    searchPlain: "جستجو",
   },
 };
 

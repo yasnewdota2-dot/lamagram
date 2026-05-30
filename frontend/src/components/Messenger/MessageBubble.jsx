@@ -107,10 +107,20 @@ const MessageBubbleImpl = ({
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const { openUserProfile } = useUserProfile();
-  const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage } = useMessengerActions();
+  const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage, loadGroupMembers } = useMessengerActions();
   const { user: meUser } = useAuth();
   const currentUserId = meUser?.id;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteForAll, setDeleteForAll] = useState(false);
   const lp = useLongPress(() => setMenuOpen(true), { threshold: 500 });
+
+  // Phase 9A: lazy-load group members if missing on render (group bubbles only)
+  React.useEffect(() => {
+    if (!mine && conversation?.kind === "group" && conversation?.id && (!groupMembers || !groupMembers[message.sender_id])) {
+      loadGroupMembers?.(conversation.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id, message.sender_id]);
 
   const handleMentionClick = async (seg) => {
     try {
@@ -350,30 +360,62 @@ const MessageBubbleImpl = ({
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger data-testid="msg-action-delete-trigger">
-                <Trash2 className="w-4 h-4 mr-2 text-red-300" />
-                <span className="text-red-300">{t("deleteMsg")}</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent
-                style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.10)" }}
-              >
-                <DropdownMenuItem onClick={() => onDelete?.(message, "me")} data-testid="msg-action-delete-me">
-                  {t("deleteForMe")}
-                </DropdownMenuItem>
-                {deletableAll && (
-                  <DropdownMenuItem
-                    onClick={() => onDelete?.(message, "all")}
-                    data-testid="msg-action-delete-all"
-                  >
-                    <span className="text-red-300">{t("deleteForEveryone")}</span>
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            <DropdownMenuItem
+              onClick={() => { setDeleteForAll(false); setConfirmDelete(true); }}
+              data-testid="msg-action-delete"
+            >
+              <Trash2 className="w-4 h-4 mr-2 text-red-300" />
+              <span className="text-red-300">{t("deleteMsg")}</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+        {confirmDelete && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.55)" }}
+            onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+            data-testid="msg-delete-confirm-overlay"
+          >
+            <div
+              className="rounded-2xl p-5 max-w-sm w-full"
+              style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", backdropFilter: "blur(20px)" }}
+              onClick={(e) => e.stopPropagation()}
+              data-testid="msg-delete-confirm-dialog"
+            >
+              <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                {t("deleteMessageTitle") || "Delete message?"}
+              </div>
+              <div className="text-sm mb-3" style={{ color: "var(--text-secondary)" }}>
+                {t("areYouSure") || "Are you sure?"}
+              </div>
+              {deletableAll && (
+                <label className="flex items-center gap-2 text-sm mb-4 cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+                  <input
+                    type="checkbox"
+                    checked={deleteForAll}
+                    onChange={(e) => setDeleteForAll(e.target.checked)}
+                    data-testid="msg-delete-for-everyone-checkbox"
+                  />
+                  {t("deleteForEveryone")}
+                </label>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 rounded-lg text-sm" style={{ color: "var(--text-secondary)" }} data-testid="msg-delete-cancel">
+                  {t("cancel")}
+                </button>
+                <button
+                  onClick={() => { setConfirmDelete(false); onDelete?.(message, deleteForAll ? "all" : "me"); }}
+                  className="px-3 py-1.5 rounded-lg text-sm text-white"
+                  style={{ background: "#E5484D" }}
+                  data-testid="msg-delete-confirm"
+                >
+                  {t("deleteMsg")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </motion.div>
   );
 };

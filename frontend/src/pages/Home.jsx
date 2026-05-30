@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Settings as SettingsIcon, Search, X, Plus, MessageSquare, Users, Megaphone, LinkIcon } from "lucide-react";
+import { Settings as SettingsIcon, Search, X, Plus, MessageSquare, Users, Megaphone, LinkIcon, Sun, Moon } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
+import { useTheme } from "../lib/theme";
 import { useMessengerActions } from "../lib/messenger";
 import {
   DropdownMenu,
@@ -25,6 +26,8 @@ import { useIsMobile } from "../lib/useIsMobile";
 export default function Home() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const { theme, setTheme } = useTheme();
+  const toggleTheme = () => setTheme(theme === "light" ? "dark" : "light");
   const { openOrCreateConversation, setActiveConv } = useMessengerActions();
   const conversations = useConversations();
   const activeConvId = useActiveConvId();
@@ -97,6 +100,20 @@ export default function Home() {
                   @{user?.username}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="p-2 rounded-xl transition-colors"
+                style={{ background: "transparent" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-glass-strong)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                aria-label="toggle theme"
+                data-testid="sidebar-theme-toggle"
+              >
+                {theme === "light"
+                  ? <Moon className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
+                  : <Sun className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />}
+              </button>
               <Link
                 to="/settings"
                 className="p-2 rounded-xl transition-colors"
@@ -117,7 +134,7 @@ export default function Home() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("searchPlaceholder2")}
+                  placeholder={t("searchPlain")}
                   className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm"
                   style={{
                     background: "var(--bg-glass)",
@@ -158,9 +175,6 @@ export default function Home() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowNewChannel(true)} data-testid="sidebar-action-new-channel">
                     <Megaphone className="w-4 h-4 mr-2" /> {t("newChannel")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowJoinDialog(true)} data-testid="sidebar-action-join-by-link">
-                    <LinkIcon className="w-4 h-4 mr-2" /> {t("joinByLink")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

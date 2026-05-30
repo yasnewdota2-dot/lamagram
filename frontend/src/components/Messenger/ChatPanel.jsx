@@ -302,12 +302,10 @@ export const ChatPanel = ({ conversation }) => {
             ) : isOnline ? (
               <span className="flex items-center gap-2">
                 <span>{t("online")}</span>
-                {other?.username && <span className="text-white/40">· @{other.username}</span>}
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 {lastSeen ? <span>{t("lastSeen")} {formatRelative(lastSeen, lang)}</span> : <span>{t("offline")}</span>}
-                {other?.username && <span className="text-white/40">· @{other.username}</span>}
               </span>
             )}
           </div>
