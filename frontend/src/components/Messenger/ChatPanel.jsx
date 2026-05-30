@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon, ArrowLeft } from "lucide-react";
+import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon, ArrowLeft, Forward as ForwardIcon, Trash2, Copy as CopyIcon, X } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -85,6 +85,68 @@ export const ChatPanel = ({ conversation }) => {
   const [channelInfoOpen, setChannelInfoOpen] = useState(false);
   const [savedTab, setSavedTab] = useState("notes"); // 'notes' | 'starred'
   const [searchOpen, setSearchOpen] = useState(false);
+  // Phase 9C — multi-select state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMap, setSelectedMap] = useState({}); // { [msgId]: messageObj }
+  const [multiForwardSrc, setMultiForwardSrc] = useState(null); // array of messages
+  const [multiDeleteOpen, setMultiDeleteOpen] = useState(false);
+  const [multiDeleteAll, setMultiDeleteAll] = useState(false);
+
+  // Reset selection whenever the active conversation changes
+  React.useEffect(() => {
+    setSelectionMode(false);
+    setSelectedMap({});
+  }, [convId]);
+
+  const exitSelection = React.useCallback(() => {
+    setSelectionMode(false);
+    setSelectedMap({});
+  }, []);
+  const enterSelection = React.useCallback((m) => {
+    setSelectionMode(true);
+    setSelectedMap((p) => ({ ...p, [m.id]: m }));
+  }, []);
+  const toggleSelect = React.useCallback((m) => {
+    setSelectedMap((prev) => {
+      const next = { ...prev };
+      if (next[m.id]) { delete next[m.id]; }
+      else { next[m.id] = m; }
+      if (Object.keys(next).length === 0) setSelectionMode(false);
+      return next;
+    });
+  }, []);
+  const selectedList = React.useMemo(
+    () => Object.values(selectedMap).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+    [selectedMap]
+  );
+  const selectedCount = selectedList.length;
+
+  const handleMultiCopy = React.useCallback(async () => {
+    const text = selectedList.map((m) => m.text || "").filter(Boolean).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast(t("copied"));
+    } catch {
+      setToast(t("copy"));
+    }
+    exitSelection();
+  }, [selectedList, exitSelection, t]);
+
+  const handleMultiForward = React.useCallback(() => {
+    if (selectedCount === 0) return;
+    setMultiForwardSrc(selectedList);
+  }, [selectedCount, selectedList]);
+
+  const handleMultiDeleteConfirm = React.useCallback(async () => {
+    const scope = multiDeleteAll ? "all" : "me";
+    setMultiDeleteOpen(false);
+    for (const m of selectedList) {
+      try { await deleteMessage(m.id, scope, convId); }
+      catch { /* continue */ }
+    }
+    setMultiDeleteAll(false);
+    exitSelection();
+  }, [multiDeleteAll, selectedList, deleteMessage, convId, exitSelection]);
 
   const handleReply = React.useCallback(
     (m) => setReplyTarget(convId, m),
@@ -249,6 +311,30 @@ export const ChatPanel = ({ conversation }) => {
       onDrop={onDrop}
       data-testid="chat-panel"
     >
+      {/* Phase 9C — Multi-select sticky toolbar overrides the header while active */}
+      {selectionMode && (
+        <div
+          className="flex items-center gap-2 px-3 py-2.5"
+          style={{ background: "rgba(11,11,18,0.96)", borderBottom: "1px solid var(--border-glass)", backdropFilter: "blur(16px)" }}
+          data-testid="multi-select-toolbar"
+        >
+          <button onClick={exitSelection} className="p-1.5 rounded-md hover:bg-white/10" aria-label={t("cancel")} data-testid="multi-select-close">
+            <X className="w-4 h-4 text-white/85" />
+          </button>
+          <div className="text-sm text-white font-medium flex-1" data-testid="multi-select-count">
+            {t("selectedCountToolbar").replace("{n}", String(selectedCount))}
+          </div>
+          <button onClick={handleMultiForward} className="p-1.5 rounded-md hover:bg-white/10 text-[#9ABEFF]" aria-label={t("forward")} data-testid="multi-select-forward">
+            <ForwardIcon className="w-4 h-4" />
+          </button>
+          <button onClick={handleMultiCopy} className="p-1.5 rounded-md hover:bg-white/10 text-white/85" aria-label={t("copy")} data-testid="multi-select-copy">
+            <CopyIcon className="w-4 h-4" />
+          </button>
+          <button onClick={() => setMultiDeleteOpen(true)} className="p-1.5 rounded-md hover:bg-white/10 text-red-300" aria-label={t("delete")} data-testid="multi-select-delete">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3"
@@ -554,6 +640,43 @@ export const ChatPanel = ({ conversation }) => {
           setToast(msg);
         }}
       />
+      <ForwardDialog
+        open={!!multiForwardSrc}
+        onOpenChange={(v) => { if (!v) { setMultiForwardSrc(null); exitSelection(); } }}
+        sourceMessages={multiForwardSrc || []}
+        onDone={(n) => {
+          const msg = n === 1 ? t("forwardedToOne") : t("forwardedToN").replace("{n}", String(n));
+          setToast(msg);
+        }}
+      />
+      {multiDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" data-testid="multi-delete-modal">
+          <div className="w-[min(92vw,420px)] rounded-2xl p-5" style={{ background: "rgba(11,11,18,0.95)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            <div className="text-base font-semibold mb-2 text-white" data-testid="multi-delete-title">
+              {t("multiDeleteTitle").replace("{n}", String(selectedCount))}
+            </div>
+            <div className="text-xs text-white/55 mb-3">{t("areYouSure")}</div>
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={multiDeleteAll}
+                onChange={(e) => setMultiDeleteAll(e.target.checked)}
+                className="w-4 h-4 accent-[#E5484D]"
+                data-testid="multi-delete-for-all"
+              />
+              <span className="text-sm text-white/85">{t("deleteForEveryone")}</span>
+            </label>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setMultiDeleteOpen(false)} className="px-3 py-1.5 rounded-lg text-xs text-white/70 hover:bg-white/5" data-testid="multi-delete-cancel">
+                {t("cancel")}
+              </button>
+              <button onClick={handleMultiDeleteConfirm} className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: "#E5484D" }} data-testid="multi-delete-confirm">
+                {t("delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isChannel && (
         <ChannelInfoDialog
           open={channelInfoOpen}

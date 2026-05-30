@@ -12,7 +12,7 @@ import logging
 import asyncio
 import shutil
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import bcrypt
 import jwt
@@ -467,6 +467,9 @@ async def public_conversation(c: dict, me_id: str) -> dict:
             "is_owner": me_id == (c.get("owner_id") or c.get("created_by")),
             "owner_id": c.get("owner_id") or c.get("created_by"),
             "created_by": c.get("created_by"),
+            # Phase 9D — admin custom titles + granular permissions snapshot for UI
+            "admin_titles": c.get("admin_titles") or {},
+            "admin_permissions": c.get("admin_permissions") or {},
         }
     else:
         other_id = next((p for p in c["participants"] if p != me_id), None)
@@ -1197,11 +1200,19 @@ async def delete_message(
         return {"ok": True, "scope": "me"}
 
     # scope == "all"
-    if msg["sender_id"] != current_user["_id"]:
-        raise HTTPException(403, "Only the sender can delete for everyone")
-    created = _parse_iso(msg.get("created_at"))
-    if created and (datetime.now(timezone.utc) - created).total_seconds() > DELETE_ALL_WINDOW_SECONDS:
-        raise HTTPException(400, "Delete-for-everyone window (24h) has expired")
+    is_sender = msg["sender_id"] == current_user["_id"]
+    # Phase 9D: admins with can_delete_messages may delete other people's
+    # messages for everyone in groups/channels. Sender retains the 24h window.
+    is_perm_admin = (
+        conv.get("kind") in ("group", "channel")
+        and _has_perm(conv, current_user["_id"], "can_delete_messages")
+    )
+    if not is_sender and not is_perm_admin:
+        raise HTTPException(403, "Only the sender or an admin can delete for everyone")
+    if is_sender:
+        created = _parse_iso(msg.get("created_at"))
+        if created and (datetime.now(timezone.utc) - created).total_seconds() > DELETE_ALL_WINDOW_SECONDS:
+            raise HTTPException(400, "Delete-for-everyone window (24h) has expired")
     # Best-effort media file cleanup
     media = msg.get("media") or {}
     media_url = media.get("url")
@@ -1432,10 +1443,14 @@ class AddMembersRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_ids: List[str] = Field(..., min_length=1, max_length=50)
 
-def _require_group_admin(conv: dict, me_id: str):
+def _require_group_admin(conv: dict, me_id: str, perm: Optional[str] = None):
     if conv.get("kind") != "group":
         raise HTTPException(400, "Not a group conversation")
-    if me_id not in (conv.get("admins") or []):
+    if perm is not None:
+        if not _has_perm(conv, me_id, perm):
+            raise HTTPException(403, "You don't have permission for this action")
+        return
+    if me_id not in (conv.get("admins") or []) and not _is_owner(conv, me_id):
         raise HTTPException(403, "Admin only")
 
 async def _broadcast_conv_to_all(conv_id: str, payload: dict):
@@ -1467,6 +1482,14 @@ async def _public_group_members(conv: dict, q: Optional[str] = None, limit: int 
         pu["is_admin"] = uid in admins or uid == owner_id
         pu["is_owner"] = (uid == owner_id)
         pu["is_online"] = manager.is_online(uid) or bool(u.get("is_online"))
+        # Phase 9D — surface custom title + per-admin permissions on listing
+        if pu["is_admin"]:
+            atitle = ((conv.get("admin_titles") or {}).get(uid) or "").strip()
+            if atitle:
+                pu["admin_title"] = atitle
+            aperms = (conv.get("admin_permissions") or {}).get(uid)
+            if aperms:
+                pu["admin_permissions"] = aperms
         out.append(pu)
     # offset/limit slice (post-filter)
     return out[max(0, offset): max(0, offset) + max(1, min(int(limit), 200))]
@@ -1488,13 +1511,14 @@ async def _public_banned_members(conv: dict) -> List[dict]:
 
 @api_router.post("/groups")
 async def create_group(body: CreateGroupRequest, current_user: dict = Depends(get_current_user)):
-    # Verify all participant users exist and are not the current user
+    # Verify all participant users exist and are not the current user. Phase 9B
+    # relaxed the minimum to 0 — solo groups are allowed (the creator can add
+    # members later from the Group Info dialog).
     p_ids = [uid for uid in dict.fromkeys(body.participant_ids) if uid != current_user["_id"]]
-    if len(p_ids) < 2:
-        raise HTTPException(400, "A group needs at least 2 other members")
-    found = await db.users.find({"_id": {"$in": p_ids}}).to_list(len(p_ids))
-    if len(found) != len(p_ids):
-        raise HTTPException(400, "One or more participant_ids not found")
+    if p_ids:
+        found = await db.users.find({"_id": {"$in": p_ids}}).to_list(len(p_ids))
+        if len(found) != len(p_ids):
+            raise HTTPException(400, "One or more participant_ids not found")
     participants = [current_user["_id"], *p_ids]
     now = datetime.now(timezone.utc).isoformat()
     conv = {
@@ -1502,6 +1526,7 @@ async def create_group(body: CreateGroupRequest, current_user: dict = Depends(ge
         "kind": "group",
         "participants": participants,
         "admins": [current_user["_id"]],
+        "owner_id": current_user["_id"],
         "title": body.title.strip(),
         "description": (body.description or "").strip() or None,
         "avatar_url": None,
@@ -1511,6 +1536,9 @@ async def create_group(body: CreateGroupRequest, current_user: dict = Depends(ge
         "last_message_at": None,
         "pinned_by": [],
         "muted_by": [],
+        "banned_users": [],
+        "admin_titles": {},
+        "admin_permissions": {},
     }
     await db.conversations.insert_one(conv)
     pub = await public_conversation(conv, current_user["_id"])
@@ -1523,7 +1551,7 @@ async def update_group(conv_id: str, body: UpdateGroupRequest, current_user: dic
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv:
         raise HTTPException(404, "Group not found")
-    _require_group_admin(conv, current_user["_id"])
+    _require_group_admin(conv, current_user["_id"], perm="can_edit_info")
     patch = {}
     if body.title is not None:
         patch["title"] = body.title.strip()
@@ -1583,7 +1611,7 @@ async def add_group_members(conv_id: str, body: AddMembersRequest, current_user:
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv:
         raise HTTPException(404, "Group not found")
-    _require_group_admin(conv, current_user["_id"])
+    _require_group_admin(conv, current_user["_id"], perm="can_invite")
     new_ids = [uid for uid in dict.fromkeys(body.user_ids) if uid not in conv["participants"]]
     if not new_ids:
         return await public_conversation(conv, current_user["_id"])
@@ -1650,7 +1678,7 @@ async def demote_admin(conv_id: str, user_id: str, current_user: dict = Depends(
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv:
         raise HTTPException(404, "Group not found")
-    _require_group_admin(conv, current_user["_id"])
+    _require_group_admin(conv, current_user["_id"], perm="can_promote")
     admins = conv.get("admins") or []
     if user_id == current_user["_id"] and len(admins) == 1:
         raise HTTPException(400, "Cannot demote yourself as the only admin")
@@ -1693,7 +1721,11 @@ async def list_channel_members(
 
 
 # ---------- Phase 8D — Ban / Transfer ownership (groups + channels) ----------
-async def _require_admin(conv: dict, user_id: str, kind_label: str):
+async def _require_admin(conv: dict, user_id: str, kind_label: str, perm: Optional[str] = None):
+    if perm is not None:
+        if not _has_perm(conv, user_id, perm):
+            raise HTTPException(403, "You don't have permission for this action")
+        return
     if user_id not in (conv.get("admins") or []) and user_id != (conv.get("owner_id") or conv.get("created_by")):
         raise HTTPException(403, f"Only admins can perform this action")
 
@@ -1702,10 +1734,8 @@ async def _do_ban(conv_id: str, target_id: str, kind: str, current_user: dict):
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != kind:
         raise HTTPException(404, f"{kind.capitalize()} not found")
-    await _require_admin(conv, current_user["_id"], kind)
+    await _require_admin(conv, current_user["_id"], kind, perm="can_ban")
     owner_id = conv.get("owner_id") or conv.get("created_by")
-    if target_id == owner_id:
-        raise HTTPException(400, "Cannot ban the owner")
     if target_id == current_user["_id"]:
         raise HTTPException(400, "Cannot ban yourself")
     target = await db.users.find_one({"_id": target_id})
@@ -2013,8 +2043,8 @@ async def update_channel(conv_id: str, body: UpdateChannelRequest, current_user:
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != "channel":
         raise HTTPException(404, "Channel not found")
-    if current_user["_id"] not in (conv.get("admins") or []):
-        raise HTTPException(403, "Admin only")
+    if not _has_perm(conv, current_user["_id"], "can_edit_info"):
+        raise HTTPException(403, "You don't have permission for this action")
     updates = {}
     if body.title is not None:
         updates["title"] = body.title.strip()
@@ -2082,8 +2112,8 @@ async def promote_channel_admin(conv_id: str, user_id: str, current_user: dict =
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != "channel":
         raise HTTPException(404, "Channel not found")
-    if current_user["_id"] not in (conv.get("admins") or []):
-        raise HTTPException(403, "Admin only")
+    if not _has_perm(conv, current_user["_id"], "can_promote"):
+        raise HTTPException(403, "You don't have permission for this action")
     if user_id not in conv["participants"]:
         raise HTTPException(400, "User is not a participant")
     await db.conversations.update_one({"_id": conv_id}, {"$addToSet": {"admins": user_id}})
@@ -2094,12 +2124,73 @@ async def demote_channel_admin(conv_id: str, user_id: str, current_user: dict = 
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != "channel":
         raise HTTPException(404, "Channel not found")
-    if current_user["_id"] not in (conv.get("admins") or []):
-        raise HTTPException(403, "Admin only")
+    if not _has_perm(conv, current_user["_id"], "can_promote"):
+        raise HTTPException(403, "You don't have permission for this action")
     if conv.get("created_by") == user_id:
         raise HTTPException(400, "Cannot demote the channel creator")
     await db.conversations.update_one({"_id": conv_id}, {"$pull": {"admins": user_id}})
     return {"ok": True}
+
+# ---------- Phase 9D — PATCH admin title + permissions ----------
+class UpdateAdminRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: Optional[str] = Field(default=None, max_length=16)
+    permissions: Optional[Dict[str, bool]] = None
+
+
+async def _patch_admin_role(conv_id: str, expected_kind: str, target_id: str, body: UpdateAdminRoleRequest, current_user: dict):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != expected_kind:
+        raise HTTPException(404, f"{expected_kind.title()} not found")
+    # Owner OR an admin with can_promote may edit other admin roles.
+    if not _is_owner(conv, current_user["_id"]) and not _has_perm(conv, current_user["_id"], "can_promote"):
+        raise HTTPException(403, "You don't have permission for this action")
+    if _is_owner(conv, target_id):
+        raise HTTPException(400, "Owner's role cannot be edited")
+    if target_id not in (conv.get("admins") or []):
+        raise HTTPException(400, "Target user is not an admin")
+
+    set_ops: dict = {}
+    if body.title is not None:
+        t = body.title.strip()
+        if t:
+            set_ops[f"admin_titles.{target_id}"] = t[:ADMIN_TITLE_MAX]
+        else:
+            # Clearing the title: delete the key
+            await db.conversations.update_one(
+                {"_id": conv_id},
+                {"$unset": {f"admin_titles.{target_id}": ""}},
+            )
+    if body.permissions is not None:
+        cleaned = {k: bool(v) for k, v in body.permissions.items() if k in ADMIN_PERM_KEYS}
+        set_ops[f"admin_permissions.{target_id}"] = cleaned
+    if set_ops:
+        await db.conversations.update_one({"_id": conv_id}, {"$set": set_ops})
+    await _broadcast_conv_to_all(conv_id, {
+        "type": "group_updated",
+        "conversation_id": conv_id,
+    })
+    fresh = await db.conversations.find_one({"_id": conv_id})
+    titles = fresh.get("admin_titles") or {}
+    perms = fresh.get("admin_permissions") or {}
+    return {
+        "ok": True,
+        "user_id": target_id,
+        "title": titles.get(target_id),
+        "permissions": perms.get(target_id) or {},
+    }
+
+
+@api_router.patch("/groups/{conv_id}/admins/{user_id}")
+async def patch_group_admin_role(conv_id: str, user_id: str, body: UpdateAdminRoleRequest, current_user: dict = Depends(get_current_user)):
+    return await _patch_admin_role(conv_id, "group", user_id, body, current_user)
+
+
+@api_router.patch("/channels/{conv_id}/admins/{user_id}")
+async def patch_channel_admin_role(conv_id: str, user_id: str, body: UpdateAdminRoleRequest, current_user: dict = Depends(get_current_user)):
+    return await _patch_admin_role(conv_id, "channel", user_id, body, current_user)
+
+
 
 @api_router.delete("/channels/{conv_id}/members/{user_id}")
 async def remove_channel_member(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
@@ -2239,8 +2330,8 @@ async def _rotate_invite(conv_id: str, expected_kind: str, current_user: dict) -
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != expected_kind:
         raise HTTPException(404, f"{expected_kind.title()} not found")
-    if current_user["_id"] not in (conv.get("admins") or []):
-        raise HTTPException(403, "Admin only")
+    if not _has_perm(conv, current_user["_id"], "can_invite"):
+        raise HTTPException(403, "You don't have permission for this action")
     token = str(uuid.uuid4())
     await db.conversations.update_one({"_id": conv_id}, {"$set": {"invite_token": token}})
     return {"invite_token": token, "invite_path": f"/join/{token}"}
@@ -2249,8 +2340,8 @@ async def _revoke_invite(conv_id: str, expected_kind: str, current_user: dict) -
     conv = await db.conversations.find_one({"_id": conv_id})
     if not conv or conv.get("kind") != expected_kind:
         raise HTTPException(404, f"{expected_kind.title()} not found")
-    if current_user["_id"] not in (conv.get("admins") or []):
-        raise HTTPException(403, "Admin only")
+    if not _has_perm(conv, current_user["_id"], "can_invite"):
+        raise HTTPException(403, "You don't have permission for this action")
     await db.conversations.update_one({"_id": conv_id}, {"$set": {"invite_token": None}})
     return {"ok": True}
 
@@ -2271,10 +2362,52 @@ async def channel_invite_create(conv_id: str, current_user: dict = Depends(get_c
 # ---------------------------------------------------------------------------
 PIN_LIMIT = 5
 
+# ---------------------------------------------------------------------------
+# Phase 9D — Admin custom titles + granular permissions
+# ---------------------------------------------------------------------------
+ADMIN_PERM_KEYS = (
+    "can_ban",
+    "can_promote",
+    "can_pin",
+    "can_edit_info",
+    "can_delete_messages",
+    "can_invite",
+)
+ADMIN_TITLE_MAX = 16
+
+
+def _is_owner(conv: dict, uid: str) -> bool:
+    return uid == (conv.get("owner_id") or conv.get("created_by"))
+
+
+def _is_admin(conv: dict, uid: str) -> bool:
+    return uid in (conv.get("admins") or []) or _is_owner(conv, uid)
+
+
+def _has_perm(conv: dict, uid: str, perm: str) -> bool:
+    """Return True if `uid` may perform `perm` in `conv`.
+
+    Owner: always True. Admins with no `admin_permissions` entry inherit ALL
+    permissions (backward compat for legacy data). Otherwise the per-flag
+    boolean is honored; a missing flag defaults to True for the same legacy
+    reason.
+    """
+    if not _is_admin(conv, uid):
+        return False
+    if _is_owner(conv, uid):
+        return True
+    perms_map = conv.get("admin_permissions") or {}
+    perms = perms_map.get(uid)
+    if not perms:
+        return True
+    return bool(perms.get(perm, True))
+
+
 def _can_pin(conv: dict, user_id: str) -> bool:
     kind = conv.get("kind")
     if kind in ("group", "channel"):
-        return user_id in (conv.get("admins") or [])
+        # Phase 9D — honor granular admin permission can_pin
+        return _has_perm(conv, user_id, "can_pin")
     # dm / saved: any participant
     return user_id in (conv.get("participants") or [])
 
@@ -2717,6 +2850,23 @@ async def on_startup():
             logger.info(f"Migration (Phase 8D): backfilled banned_users=[] on {res_p8d1.modified_count} groups/channels")
     except Exception as _e:
         logger.warning(f"phase8D backfill skipped: {_e}")
+
+    # Phase 9D: backfill admin_titles and admin_permissions on groups & channels
+    try:
+        res_p9d = await db.conversations.update_many(
+            {
+                "kind": {"$in": ["group", "channel"]},
+                "$or": [
+                    {"admin_titles": {"$exists": False}},
+                    {"admin_permissions": {"$exists": False}},
+                ],
+            },
+            {"$set": {"admin_titles": {}, "admin_permissions": {}}},
+        )
+        if res_p9d.modified_count:
+            logger.info(f"Migration (Phase 9D): backfilled admin_titles/admin_permissions on {res_p9d.modified_count} groups/channels")
+    except Exception as _e:
+        logger.warning(f"phase9D backfill skipped: {_e}")
 
     count = await db.users.count_documents({})
     if count == 0:

@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 9C+9D testing. Found CRITICAL frontend regression that crashed all chats; fixed it. NewGroupDialog single-step works. Backend has a subtle but real bug in _has_perm() where missing keys in a partial admin_permissions map default to True (granting unset perms). Frontend EditRoleModal currently sends all 6 perms so this latent bug is masked end-to-end, but it WILL surface for any future caller (mobile/API) that sends a partial perms payload. PATCH /api/groups/{id}/admins/{user_id} works for owner; PATCH endpoint authorization for non-owner relies on the same _has_perm logic and inherits this bug.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "_has_perm() in /app/backend/server.py ~L2402", "issue": "Returns bool(perms.get(perm, True)) — when an admin's admin_permissions map is set but does NOT contain a specific perm key, that perm is granted by default. Means PATCHing {permissions:{can_pin:true}} actually grants the admin ALL six perms because the other five keys default to True. Reproduce: PATCH /api/groups/<id>/admins/<bob> body={'permissions':{'can_pin':true}}; then as bob POST /api/groups/<id>/ban/<x> -> returns 200 (should be 403). Should be: when perms map exists and is non-empty, missing keys must default to FALSE; only when the entire entry is absent should the admin inherit ALL (backward compat).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "PATCH /api/groups/{id}/admins/{user_id}", "issue": "Title >16 chars returns 422 via Pydantic max_length validation. Spec wording 'max 16 chars' could be either truncate or reject — current reject behavior is reasonable but frontend should mirror with maxLength=16 on input (already does)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MessageBubble.jsx (MessageBubbleImpl)", "issue": "REGRESSION: Phase 9C added selectionMode/isSelected/onToggleSelect/onEnterSelection prop references at lines 222-224 and the long-press handler, but the function-component prop destructuring (line 95-108) did NOT include them. This caused 'ReferenceError: selectionMode is not defined' inside every MessageBubble render, instantly crashing the entire chat panel for any conversation with messages (caught by error boundary, replaced chat with white screen). I APPLIED the minimal fix: added the four props to destructuring and wired useLongPress to call onEnterSelection when provided. Verified page errors dropped from 1 -> 0 on reload.", "selector": "[data-testid^='message-bubble-']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Multi-select Copy/Delete/Forward (B/C/D)", "issue": "After the MessageBubble fix the chat no longer crashes and composer is reachable, but my Playwright bubble locators using .filter(has_text=...) on '[data-testid^=message-bubble-]' did not match freshly-sent text bubbles within the 30s window — likely because the text node sits in a descendant element. NEEDS RE-RUN by main agent with a more specific selector (e.g. last bubble or testid suffixed with msg id from network response). I did NOT validate the actual Copy/Delete/Forward outcomes end-to-end due to this selector issue.", "affected_selectors": ["[data-testid^='message-bubble-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase9d.py",
+    "/app/test_reports/pytest/pytest_phase9d.xml"
+  ],
+  "action_items": [
+    "Re-verify the MessageBubble destructuring fix at /app/frontend/src/components/Messenger/MessageBubble.jsx lines 95-118 (I added selectionMode/isSelected/onToggleSelect/onEnterSelection + wired useLongPress). Confirm this matches Phase 9C design intent.",
+    "Fix _has_perm() in /app/backend/server.py (~L2400): change `return bool(perms.get(perm, True))` to `return bool(perms.get(perm, False))`. Backward compat is already handled earlier by `if not perms: return True`. After the fix re-test bob's restricted actions (ban/invite/edit-info/promote) on a freshly-created group where bob was PATCHed with partial perms.",
+    "Re-run multi-select Copy/Delete/Forward Playwright tests now that the crash is fixed — use a more robust bubble selector (e.g. await composer.fill+enter, then grab `page.locator('[data-testid^=message-bubble-]').last`). The data-testids `multi-select-toolbar/count/copy/delete/forward`, `multi-delete-modal/for-all/confirm`, and `message-forwarded-header` all exist in code.",
+    "Re-run EditRoleModal flow against the EXISTING group id 849ad116-1ef0-4d57-86b2-4a5fe043914b (P9D Test Group) where bob is already a Moderator admin — my run picked the wrong group (a renamed empty one). EditRole testids (`group-info-edit-role-bob`, `edit-role-modal`, `edit-role-title-input`, `edit-role-perm-<flag>-checkbox`, `edit-role-save`, `group-info-admin-title-bob`) all exist in GroupDialogs.jsx."
+  ],
+  "critical_code_review_comments": [
+    "MessageBubble.jsx: missing props in destructuring is a textbook regression that would've been caught by a single render test. Suggest adding a smoke unit test that mounts MessageBubble with minimal props.",
+    "_has_perm in server.py: the 'inherit ALL on missing entry' semantics are correct but the per-key default should be FALSE once any entry exists. Current code mixes both into one default and is semantically wrong.",
+    "ChatPanel.jsx is 1869 lines — exceeds the 700-line guideline. Consider splitting multi-select toolbar, multi-delete modal, and forward orchestration into separate components.",
+    "MessageBubble.jsx is 484 lines and growing; the prop list is also growing. A typed props contract (TS or PropTypes) would prevent the destructuring drift that caused this regression."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/Messenger/MessageBubble.jsx",
+    "/app/backend/tests/test_phase9d.py"
+  ],
+  "success_rate": {"backend": "60%", "frontend": "35%"},
+  "test_credentials": "alice/password123, bob/password123, charlie/password123 (verified via /api/auth/login).",
+  "seed_data_creation": "Created groups: TEST_Phase9D_<ts>, TEST_Legacy_<ts>, TEST_Empty_<ts>, TEST_NoPicker_<ts> as alice. The legacy group has bob promoted to admin WITHOUT any admin_permissions entry — used for backward-compat checks. Did NOT clean up these TEST_ groups; they show in sidebar.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_phase9d.py and need rework: (1) members listing returns a LIST directly, not dict — adjust parsing; (2) title >16 returns 422 — adjust assertion; (3) the perm-enforcement tests will keep failing until _has_perm() is fixed. The frontend multi-select chain is now non-crashing — re-run Playwright with a better bubble selector. Existing group 849ad116-1ef0-4d57-86b2-4a5fe043914b ('P9D Test Group') has bob with title='Moderator' and explicit 6-key perms map {can_pin:true, rest:false} — that group correctly enforces 403 on bob's ban/invite (verified via curl in this iteration).",
+  "rca_of_the_issue": "Frontend crash: Phase 9C wiring added new prop usages without updating the destructuring signature. ESLint did not flag because react components destructure dynamically. Fixed by adding the 4 missing props to the function signature and switching long-press to call onEnterSelection. Backend _has_perm: original author chose `.get(perm, True)` intending backward-compat, but `if not perms: return True` already handles that — the default in the explicit-map branch should be False."
+}

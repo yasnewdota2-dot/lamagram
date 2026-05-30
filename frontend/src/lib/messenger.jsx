@@ -670,6 +670,15 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
   // Phase 9C: public chats discovery (groups + channels)
+  // Phase 9D: PATCH admin custom title + permissions
+  const updateAdminRole = useCallback(async (convId, kind, userId, { title, permissions } = {}) => {
+    const path = kind === "channel" ? `/channels/${convId}/admins/${userId}` : `/groups/${convId}/admins/${userId}`;
+    const body = {};
+    if (title !== undefined) body.title = title;
+    if (permissions !== undefined) body.permissions = permissions;
+    const { data } = await api.patch(path, body);
+    return data;
+  }, []);
   const discoverPublic = useCallback(async (q = "", limit = 8) => {
     const { data } = await api.get("/discover", { params: { q, limit } });
     return data;
@@ -1162,6 +1171,7 @@ export const MessengerProvider = ({ children }) => {
       searchInConversation,
       searchMessagesGlobal,
       discoverPublic,
+      updateAdminRole,
       starMessage,
       unstarMessage,
       listStarred,
@@ -1217,6 +1227,7 @@ export const MessengerProvider = ({ children }) => {
       searchInConversation,
       searchMessagesGlobal,
       discoverPublic,
+      updateAdminRole,
       starMessage,
       unstarMessage,
       listStarred,

@@ -13,7 +13,7 @@ import { SavedAvatar } from "./ChatList";
 
 const MAX_TARGETS = 10;
 
-export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => {
+export const ForwardDialog = ({ open, onOpenChange, sourceMessage, sourceMessages, onDone }) => {
   const { t, dir } = useI18n();
   const { user } = useAuth();
   const conversations = useConversations();
@@ -24,6 +24,16 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const debTimer = useRef(null);
+
+  // Resolve the set of source message ids: prefer the multi-source array,
+  // otherwise fall back to the single-message API for back-compat.
+  const sourceIds = useMemo(() => {
+    if (Array.isArray(sourceMessages) && sourceMessages.length > 0) {
+      return sourceMessages.map((m) => m.id);
+    }
+    if (sourceMessage?.id) return [sourceMessage.id];
+    return [];
+  }, [sourceMessage, sourceMessages]);
 
   useEffect(() => {
     if (!open) {
@@ -79,7 +89,7 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => 
   };
 
   const handleSubmit = async () => {
-    if (!sourceMessage || selectedIds.size === 0 || submitting) return;
+    if (sourceIds.length === 0 || selectedIds.size === 0 || submitting) return;
     setSubmitting(true);
     setError("");
     try {
@@ -95,8 +105,15 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, onDone }) => 
           targetConvIds.push(id);
         }
       }
-      const res = await forwardMessages(sourceMessage.id, targetConvIds);
-      onDone?.(res.forwarded || targetConvIds.length);
+      // Loop per source message — preserves original message order in each target.
+      let totalForwarded = 0;
+      for (const mid of sourceIds) {
+        try {
+          const res = await forwardMessages(mid, targetConvIds);
+          totalForwarded += res?.forwarded || targetConvIds.length;
+        } catch { /* continue */ }
+      }
+      onDone?.(totalForwarded || sourceIds.length * targetConvIds.length);
       onOpenChange(false);
     } catch (e) {
       setError(e?.response?.data?.detail || e.message);

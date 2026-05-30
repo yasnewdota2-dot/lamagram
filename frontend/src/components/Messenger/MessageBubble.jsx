@@ -105,6 +105,10 @@ const MessageBubbleImpl = ({
   onEdit,
   onDelete,
   onJumpToReply,
+  selectionMode,
+  isSelected,
+  onToggleSelect,
+  onEnterSelection,
 }) => {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -115,7 +119,10 @@ const MessageBubbleImpl = ({
   const currentUserId = meUser?.id;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteForAll, setDeleteForAll] = useState(false);
-  const lp = useLongPress(() => setMenuOpen(true), { threshold: 500 });
+  const lp = useLongPress(() => {
+    if (onEnterSelection) onEnterSelection(message);
+    else setMenuOpen(true);
+  }, { threshold: 500 });
 
   // Phase 9A: lazy-load group members if missing on render (group bubbles only)
   React.useEffect(() => {
@@ -219,8 +226,10 @@ const MessageBubbleImpl = ({
         </button>
       )}
       <div
-        {...lp}
-        className={`max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"}`}
+        {...(selectionMode ? {} : lp)}
+        onClick={selectionMode ? (e) => { e.stopPropagation(); onToggleSelect?.(message); } : undefined}
+        className={`relative max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} ${selectionMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
+        data-testid={isSelected ? `message-selected-${message.id}` : undefined}
         style={
           emojiOnly
             ? { background: "transparent", WebkitTouchCallout: "none" }
@@ -254,6 +263,15 @@ const MessageBubbleImpl = ({
             {groupMembers?.[message.sender_id]?.display_name ||
               groupMembers?.[message.sender_id]?.username ||
               `User ${String(message.sender_id).slice(0, 6)}`}
+            {groupMembers?.[message.sender_id]?.admin_title && (
+              <span
+                className="ms-1 text-[9px] font-normal opacity-70"
+                style={{ color: "#C9B8FF" }}
+                data-testid="group-sender-admin-title"
+              >
+                [{groupMembers[message.sender_id].admin_title}]
+              </span>
+            )}
           </div>
         )}
         {message.forwarded_from && <ForwardedHeader from={message.forwarded_from} t={t} />}
