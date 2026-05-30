@@ -1,0 +1,39 @@
+{
+  "summary": "Re-tested Glass Messenger Phase 9C/9D after the two iteration-8 fixes. The backend `_has_perm` fix is verified end-to-end (ban→403, pin→403, invite→200 for an admin holding only can_invite). NewGroupDialog single-step works (no member picker; title-only flow creates and activates the group). However two critical FRONTEND integration miss-wirings make the bulk of Phase 9C/9D unreachable from the UI: (1) Multi-select is unreachable because `ChatPanel.jsx` never passes `selectionMode/isSelected/onToggleSelect/onEnterSelection` props to `<MessageBubble>` — long-press opens the per-message menu instead of selection mode, so the multi-select toolbar can never appear, and Copy/Delete/Forward flows are all blocked. (2) `EditRoleModal` is defined and exported in `GroupDialogs.jsx` but is never imported or rendered anywhere — `setEditRoleFor(m)` runs on click but no JSX consumes the state, so the modal never opens, blocking Phase 9D end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ChatPanel.jsx", "issue": "Multi-select props (selectionMode, isSelected, onToggleSelect, onEnterSelection) are never passed to <MessageBubble>. As a result, long-pressing a bubble opens the message menu (`setMenuOpen(true)`) instead of entering selection mode — the toolbar `data-testid='multi-select-toolbar'` is never rendered. Blocks Copy / Delete-for-everyone / Forward.", "selector": "[data-testid^='message-']", "priority": "CRITICAL"},
+      {"component": "GroupDialogs.jsx", "issue": "EditRoleModal component is exported (line 584) but never imported or instantiated anywhere in the app. Clicking `group-info-edit-role-bob` calls `setEditRoleFor(m)`, but no <EditRoleModal> JSX is rendered using `editRoleFor`. Modal never appears, blocking Phase 9D EditRole flow and admin-title/permissions UI changes.", "selector": "[data-testid='group-info-edit-role-bob']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Multi-select Copy/Delete/Forward", "issue": "Toolbar never appears because selection state never reaches MessageBubble. All three Phase 9C item-2 tests are blocked.", "affected_selectors": ["[data-testid='multi-select-toolbar']", "[data-testid='multi-select-copy']", "[data-testid='multi-select-delete']", "[data-testid='multi-select-forward']"]},
+      {"flow": "EditRole / admin title & granular perms", "issue": "EditRoleModal is unreachable; cannot change title or perms via UI; cannot validate `group-sender-admin-title` bubble label updates from the UI side.", "affected_selectors": ["[data-testid='edit-role-modal']", "[data-testid='edit-role-title-input']", "[data-testid='edit-role-save']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_glass_messenger.py", "/app/backend/tests/test_phase9d.py"],
+  "action_items": [
+    "ChatPanel.jsx: when rendering <MessageBubble> (~L548-560) pass `selectionMode={selectionMode}`, `isSelected={selectedIds.includes(m.id)}`, `onEnterSelection={(msg)=>{ setSelectionMode(true); setSelectedIds([msg.id]); }}` and `onToggleSelect={(msg)=>{ setSelectedIds(prev => prev.includes(msg.id) ? prev.filter(x=>x!==msg.id) : [...prev, msg.id]); }}`.",
+    "GroupDialogs.jsx (GroupInfoDialog): import/render <EditRoleModal> at the bottom of the dialog: `{editRoleFor && <EditRoleModal member={editRoleFor} kind={conv?.kind || 'group'} onClose={()=>setEditRoleFor(null)} onSave={async (payload)=>{ await api.patch(`/groups/${conv.id}/admins/${editRoleFor.user_id || editRoleFor.id}`, payload); setEditRoleFor(null); refreshMembers?.(); }} />}` — adapt API helper to existing pattern.",
+    "After above two wiring fixes, re-run the full Phase 9C/9D playbook (multi-select Copy/Delete/Forward + EditRole end-to-end as alice + bob view title/permission checks).",
+    "Persian/RTL smoke + Phase 9C item 1+4 (public-chat search + GroupInfoDialog member count) were not exercised in this iteration because the higher-priority integration bugs block the primary flows; please re-test after fixes."
+  ],
+  "critical_code_review_comments": [
+    "DEAD CODE: EditRoleModal exported but never used. Either render it or remove the export+state to keep the codebase clean.",
+    "MessageBubble accepts selection props in destructuring (iter-8 fix) but ChatPanel doesn't forward them — confirm the two changes were committed together; this looks like a half-merged change.",
+    "Backend `_has_perm` correctly defaults to False when an admin_permissions entry exists; legacy admins with no entry still get full perms. This matches the intended semantics. ✓",
+    "Suggest unit/E2E coverage gate that asserts `multi-select-toolbar` appears after a synthetic long-press to prevent silent regressions."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "25%"},
+  "test_credentials": "alice / password123 (owner); bob / password123 (admin); charlie / password123 (regular)",
+  "seed_data_creation": "Created 'Smoke Test Group SR3' via NewGroupDialog; reset bob's admin_permissions on group 849ad116-1ef0-4d57-86b2-4a5fe043914b to {title:'Moderator', all 6 perms true} so retests can reproduce Edit Role from a clean state.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After E1 fixes the two integration miss-wirings, re-run: (1) multi-select copy clipboard match with 'alpha\\n\\nbeta\\n\\ngamma' via page.evaluate('navigator.clipboard.readText()'); use bubble testid prefix `message-{id}` (NOT `message-bubble-{id}`); (2) multi-delete-for-everyone confirm both bubbles vanish; (3) multi-forward to `[data-testid=\"chat-list-item-saved\"]` then assert `message-forwarded-header` count in Saved; (4) EditRoleModal flow on group 849ad116-1ef0-4d57-86b2-4a5fe043914b → title 'Captain', uncheck all perms except can_invite, save; then login as bob, send a group message, assert `group-sender-admin-title` shows '[Captain]' in his bubble; verify ban-* button absent/disabled and add-toggle visible. The sidebar `+` testid is `sidebar-new-button`; new-group menu item is `sidebar-action-new-group`. Group-info toolbar trigger is `chat-header-group-title-trigger`.",
+  "rca_of_the_issue": "Iteration 8 added selection prop destructuring to MessageBubble.jsx and the toolbar+state to ChatPanel.jsx, but never connected them — `<MessageBubble ... />` is rendered without the new props, so `onEnterSelection` is undefined and long-press falls through to the menu open path. Separately, EditRoleModal was authored and exported but the GroupInfoDialog JSX was never updated to render it conditionally on `editRoleFor`. Both are classic 'wiring missed during refactor' bugs. Reproduction: login alice → open Bob DM → long-press any text bubble → menu opens (toolbar absent). For EditRole: login alice → open P9D Test Group → group info → click 'Edit role' → nothing happens (state mutates silently)."
+}

@@ -2400,7 +2400,7 @@ def _has_perm(conv: dict, uid: str, perm: str) -> bool:
     perms = perms_map.get(uid)
     if not perms:
         return True
-    return bool(perms.get(perm, True))
+    return bool(perms.get(perm, False))
 
 
 def _can_pin(conv: dict, user_id: str) -> bool:
