@@ -185,10 +185,26 @@ api_router = APIRouter(prefix="/api")
 async def root():
     return {"message": "Glass Messenger API", "status": "ok"}
 
+async def _name_taken(name: str, *, exclude_user_id: str = None, exclude_conv_id: str = None) -> bool:
+    """Global names namespace: username and conv.handle share the same pool."""
+    n = (name or "").strip().lower()
+    if not n:
+        return False
+    uq = {"username": n}
+    if exclude_user_id:
+        uq["_id"] = {"$ne": exclude_user_id}
+    if await db.users.find_one(uq):
+        return True
+    cq = {"handle": n}
+    if exclude_conv_id:
+        cq["_id"] = {"$ne": exclude_conv_id}
+    if await db.conversations.find_one(cq):
+        return True
+    return False
+
 @api_router.post("/auth/signup")
 async def signup(body: SignupRequest):
-    existing = await db.users.find_one({"username": body.username})
-    if existing:
+    if await _name_taken(body.username):
         raise HTTPException(status_code=409, detail="Username already taken")
     now = datetime.now(timezone.utc).isoformat()
     user_doc = {
@@ -426,14 +442,17 @@ async def public_conversation(c: dict, me_id: str) -> dict:
         me = await db.users.find_one({"_id": me_id})
         other_pub = public_user(me) if me else None
         unread = 0
-    elif kind == "group":
+    elif kind in ("group", "channel"):
         other_pub = None
-        unread = await db.messages.count_documents({
-            "conversation_id": c["_id"],
-            "sender_id": {"$ne": me_id},
-            "status": {"$ne": "seen"},
-            "deleted": {"$ne": True},
-        })
+        if kind == "channel":
+            unread = 0  # channels: no per-user read tracking
+        else:
+            unread = await db.messages.count_documents({
+                "conversation_id": c["_id"],
+                "sender_id": {"$ne": me_id},
+                "status": {"$ne": "seen"},
+                "deleted": {"$ne": True},
+            })
         group_pub = {
             "title": c.get("title", ""),
             "avatar_url": c.get("avatar_url"),
@@ -454,7 +473,8 @@ async def public_conversation(c: dict, me_id: str) -> dict:
         other_pub = public_user(other) if other else None
         if other_pub and other_id:
             other_pub["is_online"] = manager.is_online(other_id) or bool(other.get("is_online"))
-    return {
+    is_admin = me_id in (c.get("admins") or [])
+    payload = {
         "id": c["_id"],
         "kind": kind,
         "participants": c["participants"],
@@ -464,7 +484,14 @@ async def public_conversation(c: dict, me_id: str) -> dict:
         "last_message_at": c.get("last_message_at"),
         "created_at": c["created_at"],
         "unread_count": unread,
+        "is_public": bool(c.get("is_public", False)),
+        "handle": c.get("handle"),
+        "is_admin": is_admin,
+        "posters_only": kind == "channel",
     }
+    if is_admin and c.get("invite_token"):
+        payload["invite_token"] = c.get("invite_token")
+    return payload
 
 class ConnectionManager:
     def __init__(self):
@@ -665,7 +692,7 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
         if kind == "saved":
             other_pub = public_user(me_doc) if me_doc else None
             unread = 0
-        elif kind == "group":
+        elif kind in ("group", "channel"):
             other_pub = None
             group_pub = {
                 "title": c.get("title", ""),
@@ -675,7 +702,7 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
                 "is_admin": me_id in (c.get("admins") or []),
                 "created_by": c.get("created_by"),
             }
-            unread = unread_by_conv.get(c["_id"], 0)
+            unread = 0 if kind == "channel" else unread_by_conv.get(c["_id"], 0)
         else:
             other_id = next((p for p in c.get("participants", []) if p != me_id), None)
             other_doc = users_by_id.get(other_id) if other_id else None
@@ -683,7 +710,8 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
             if other_pub and other_id and other_doc:
                 other_pub["is_online"] = manager.is_online(other_id) or bool(other_doc.get("is_online"))
             unread = unread_by_conv.get(c["_id"], 0)
-        out.append({
+        is_admin = me_id in (c.get("admins") or [])
+        row = {
             "id": c["_id"],
             "kind": kind,
             "participants": c["participants"],
@@ -695,7 +723,14 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
             "unread_count": unread,
             "is_pinned": me_id in (c.get("pinned_by") or []),
             "is_muted": me_id in (c.get("muted_by") or []),
-        })
+            "is_public": bool(c.get("is_public", False)),
+            "handle": c.get("handle"),
+            "is_admin": is_admin,
+            "posters_only": kind == "channel",
+        }
+        if is_admin and c.get("invite_token"):
+            row["invite_token"] = c.get("invite_token")
+        out.append(row)
 
     saved = [c for c in out if c.get("kind") == "saved"]
     dm = [c for c in out if c.get("kind") != "saved"]
@@ -737,11 +772,17 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         raise HTTPException(404, "Conversation not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
+    # Channel posting: admins only
+    if conv.get("kind") == "channel" and current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Only admins can post in channels")
     other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
     is_saved = conv.get("kind") == "saved"
+    is_channel = conv.get("kind") == "channel"
     now = datetime.now(timezone.utc).isoformat()
     if is_saved:
         initial_status = "seen"
+    elif is_channel:
+        initial_status = "sent"
     else:
         initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
     reply_snap = None
@@ -773,19 +814,24 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
     )
     pm = public_message(msg)
     new_payload = {"type": "message_new", "message": pm, "conversation_id": conv_id}
-    await manager.send_to_user(current_user["_id"], new_payload)
-    if other_id:
-        await manager.send_to_user(other_id, new_payload)
-        if initial_status == "delivered":
-            status_payload = {
-                "type": "message_status",
-                "message_id": msg["_id"],
-                "conversation_id": conv_id,
-                "status": "delivered",
-                "at": now,
-            }
-            await manager.send_to_user(current_user["_id"], status_payload)
-            await manager.send_to_user(other_id, status_payload)
+    if conv.get("kind") in ("group", "channel"):
+        for pid in conv["participants"]:
+            await manager.send_to_user(pid, new_payload)
+    else:
+        await manager.send_to_user(current_user["_id"], new_payload)
+        if other_id:
+            await manager.send_to_user(other_id, new_payload)
+    # Status (delivered) broadcast — skip entirely for channels
+    if not is_channel and other_id and initial_status == "delivered":
+        status_payload = {
+            "type": "message_status",
+            "message_id": msg["_id"],
+            "conversation_id": conv_id,
+            "status": "delivered",
+            "at": now,
+        }
+        await manager.send_to_user(current_user["_id"], status_payload)
+        await manager.send_to_user(other_id, status_payload)
     return pm
 
 @api_router.post("/conversations/{conv_id}/read")
@@ -795,6 +841,9 @@ async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_
         raise HTTPException(404, "Conversation not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
+    # Phase 6: channels do not track per-user read receipts
+    if conv.get("kind") == "channel":
+        return {"updated": 0}
     now = datetime.now(timezone.utc).isoformat()
     targets = await db.messages.find({
         "conversation_id": conv_id,
@@ -843,6 +892,8 @@ async def upload_message_media(
         raise HTTPException(404, "Conversation not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
+    if conv.get("kind") == "channel" and current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Only admins can post in channels")
 
     ctype = normalize_mime(file.content_type) or "application/octet-stream"
     if kind == "image" and not ctype.startswith("image/"):
@@ -1294,6 +1345,8 @@ async def update_username(body: UpdateUsernameRequest, current_user: dict = Depe
     existing = await db.users.find_one({"username": new_un, "_id": {"$ne": current_user["_id"]}})
     if existing:
         raise HTTPException(409, "Username already taken")
+    if await db.conversations.find_one({"handle": new_un}):
+        raise HTTPException(409, "Username already taken")
     await db.users.update_one({"_id": current_user["_id"]}, {"$set": {"username": new_un}})
     updated = await db.users.find_one({"_id": current_user["_id"]})
     pub = public_user(updated)
@@ -1658,6 +1711,159 @@ async def toggle_reaction(message_id: str, body: ReactionRequest, current_user: 
 # ---------------------------------------------------------------------------
 # WebSocket — /api/ws
 # ---------------------------------------------------------------------------
+# === Phase 6: Channels ===
+
+HANDLE_RE = re.compile(r"^[a-z0-9_]{3,32}$")
+
+class CreateChannelRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str = Field(..., min_length=3, max_length=50)
+    description: Optional[str] = Field(None, max_length=500)
+    is_public: bool = False
+    handle: Optional[str] = None
+    participant_ids: Optional[list[str]] = None
+
+class UpdateChannelRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: Optional[str] = Field(None, min_length=3, max_length=50)
+    description: Optional[str] = Field(None, max_length=500)
+
+@api_router.post("/channels")
+async def create_channel(body: CreateChannelRequest, current_user: dict = Depends(get_current_user)):
+    title = body.title.strip()
+    desc = (body.description or "").strip()
+    is_public = bool(body.is_public)
+    handle = (body.handle or "").strip().lower() or None
+    if is_public:
+        if not handle:
+            raise HTTPException(400, "handle is required for public channels")
+    if handle is not None:
+        if not HANDLE_RE.match(handle):
+            raise HTTPException(400, "Invalid handle format")
+        if await _name_taken(handle):
+            raise HTTPException(409, "Handle already taken")
+    participants = list({current_user["_id"], *(body.participant_ids or [])})
+    invite_token = None if is_public else str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "_id": str(uuid.uuid4()),
+        "kind": "channel",
+        "title": title,
+        "description": desc,
+        "avatar_url": None,
+        "participants": participants,
+        "admins": [current_user["_id"]],
+        "created_by": current_user["_id"],
+        "created_at": now,
+        "last_message": None,
+        "last_message_at": None,
+        "pinned_by": [],
+        "muted_by": [],
+        "is_public": is_public,
+        "handle": handle,
+        "invite_token": invite_token,
+    }
+    await db.conversations.insert_one(doc)
+    pub = await public_conversation(doc, current_user["_id"])
+    # Broadcast new conversation to participants
+    for pid in participants:
+        await manager.send_to_user(pid, {"type": "conversation_new", "conversation": pub})
+    return pub
+
+@api_router.patch("/channels/{conv_id}")
+async def update_channel(conv_id: str, body: UpdateChannelRequest, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    updates = {}
+    if body.title is not None:
+        updates["title"] = body.title.strip()
+    if body.description is not None:
+        updates["description"] = body.description.strip()
+    if updates:
+        await db.conversations.update_one({"_id": conv_id}, {"$set": updates})
+        conv.update(updates)
+    pub = await public_conversation(conv, current_user["_id"])
+    for pid in conv["participants"]:
+        await manager.send_to_user(pid, {"type": "conversation_updated", "conversation": pub})
+    return pub
+
+@api_router.post("/channels/{conv_id}/avatar")
+async def upload_channel_avatar(
+    conv_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    if not file.content_type or file.content_type.split("/")[0] != "image":
+        raise HTTPException(400, "Avatar must be an image")
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Avatar too large (max 5MB)")
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+    fname = f"channel_{conv_id}_{uuid.uuid4().hex}.{ext}"
+    avatar_dir = UPLOAD_DIR / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    fpath = avatar_dir / fname
+    with open(fpath, "wb") as f:
+        f.write(contents)
+    rel_url = f"/api/uploads/avatars/{fname}"
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"avatar_url": rel_url}})
+    conv["avatar_url"] = rel_url
+    pub = await public_conversation(conv, current_user["_id"])
+    for pid in conv["participants"]:
+        await manager.send_to_user(pid, {"type": "conversation_updated", "conversation": pub})
+    return pub
+
+@api_router.post("/channels/{conv_id}/admins/{user_id}")
+async def promote_channel_admin(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    if user_id not in conv["participants"]:
+        raise HTTPException(400, "User is not a participant")
+    await db.conversations.update_one({"_id": conv_id}, {"$addToSet": {"admins": user_id}})
+    return {"ok": True}
+
+@api_router.delete("/channels/{conv_id}/admins/{user_id}")
+async def demote_channel_admin(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    if current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Admin only")
+    if conv.get("created_by") == user_id:
+        raise HTTPException(400, "Cannot demote the channel creator")
+    await db.conversations.update_one({"_id": conv_id}, {"$pull": {"admins": user_id}})
+    return {"ok": True}
+
+@api_router.delete("/channels/{conv_id}/members/{user_id}")
+async def remove_channel_member(conv_id: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv or conv.get("kind") != "channel":
+        raise HTTPException(404, "Channel not found")
+    is_self = user_id == current_user["_id"]
+    is_admin = current_user["_id"] in (conv.get("admins") or [])
+    if not (is_self or is_admin):
+        raise HTTPException(403, "Admin only or self")
+    if conv.get("created_by") == user_id and not is_self:
+        raise HTTPException(400, "Cannot remove the channel creator")
+    await db.conversations.update_one(
+        {"_id": conv_id},
+        {"$pull": {"participants": user_id, "admins": user_id}},
+    )
+    return {"ok": True}
+
 @api_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
     # Resolve token: prefer query param, fallback to Authorization header
@@ -1778,6 +1984,31 @@ SEED_USERS = [
 
 @app.on_event("startup")
 async def on_startup():
+    # Phase 6 migration: backfill is_public/handle/invite_token on conversations
+    res_p6 = await db.conversations.update_many(
+        {"is_public": {"$exists": False}},
+        {"$set": {"is_public": False, "handle": None, "invite_token": None}},
+    )
+    if res_p6.modified_count:
+        logger.info(f"Migration (Phase 6): backfilled {res_p6.modified_count} conversation rows with is_public/handle/invite_token")
+    # Ensure index on conversations.handle (unique, partial — only string handles)
+    try:
+        try:
+            await db.conversations.drop_index("handle_1")
+        except Exception:
+            pass
+        try:
+            await db.conversations.drop_index("handle_unique_str")
+        except Exception:
+            pass
+        await db.conversations.create_index(
+            "handle",
+            unique=True,
+            partialFilterExpression={"handle": {"$type": "string"}},
+            name="handle_unique_str",
+        )
+    except Exception as _e:
+        logger.warning(f"handle index create skipped: {_e}")
     await db.users.create_index("username", unique=True)
     await db.conversations.create_index("participants")
     await db.messages.create_index([("conversation_id", 1), ("created_at", 1)])
