@@ -8,6 +8,9 @@ import {
   Pencil,
   Trash2,
   CornerUpLeft,
+  Pin,
+  PinOff,
+  Eye,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -29,6 +32,8 @@ import { useLongPress } from "../../lib/useLongPress";
 import { parseMentions } from "../../lib/parseMentions";
 import { useUserProfile } from "./UserProfileDrawer";
 import { useMessengerActions } from "../../lib/messenger";
+import { useAuth } from "../../lib/auth";
+import { formatCount } from "../../lib/formatNumber";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
 
@@ -102,7 +107,9 @@ const MessageBubbleImpl = ({
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const { openUserProfile } = useUserProfile();
-  const { setActiveConv, openOrCreateConversation } = useMessengerActions();
+  const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage } = useMessengerActions();
+  const { user: meUser } = useAuth();
+  const currentUserId = meUser?.id;
   const lp = useLongPress(() => setMenuOpen(true), { threshold: 500 });
 
   const handleMentionClick = async (seg) => {
@@ -259,6 +266,15 @@ const MessageBubbleImpl = ({
             <span data-testid="message-edited-marker">{t("edited")}</span>
           )}
           <span>{formatTime(message.created_at)}</span>
+          {conversation?.kind === "channel" && (message.view_count || 0) > 0 && (
+            <span className="flex items-center gap-0.5" data-testid="message-view-count">
+              <Eye className="w-3 h-3" />
+              <span>{formatCount(message.view_count)}</span>
+            </span>
+          )}
+          {message.pinned_in_conv && (
+            <Pin className="w-3 h-3" data-testid="message-pin-indicator" />
+          )}
           {mine && !isPending && !isFailed && conversation?.kind !== "channel" && <Ticks status={message.status} />}
           {isPending && <span className="opacity-70">·</span>}
           {isFailed && <span className="text-red-300">!</span>}
@@ -292,6 +308,34 @@ const MessageBubbleImpl = ({
             <DropdownMenuItem onClick={() => onForward?.(message)} data-testid="msg-action-forward">
               <Forward className="w-4 h-4 mr-2" /> {t("forward")}
             </DropdownMenuItem>
+            {!message.deleted_for_everyone && (
+              (() => {
+                const isChannel = conversation?.kind === "channel";
+                const isGroup = conversation?.kind === "group";
+                const isAdmin = !!conversation?.admins?.includes?.(currentUserId);
+                const canPin = isChannel || isGroup ? isAdmin : true;
+                if (!canPin) return null;
+                return message.pinned_in_conv ? (
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      try { await unpinMessage(message.id); } catch (e) { toast.error(e?.response?.data?.detail || t("pinFailed")); }
+                    }}
+                    data-testid="msg-action-unpin"
+                  >
+                    <PinOff className="w-4 h-4 mr-2" /> {t("unpinMessage")}
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      try { await pinMessage(message.id); } catch (e) { toast.error(e?.response?.data?.detail || t("pinFailed")); }
+                    }}
+                    data-testid="msg-action-pin"
+                  >
+                    <Pin className="w-4 h-4 mr-2" /> {t("pinMessage")}
+                  </DropdownMenuItem>
+                );
+              })()
+            )}
             {isText && (
               <DropdownMenuItem
                 onClick={() => navigator.clipboard?.writeText(message.text || "")}

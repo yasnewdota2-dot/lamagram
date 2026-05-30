@@ -421,6 +421,20 @@ export const MessengerProvider = ({ children }) => {
     }));
   }, []);
 
+  // Phase 8C: pin / unpin / list pinned messages
+  const pinMessage = useCallback(async (messageId) => {
+    const { data } = await api.post(`/messages/${messageId}/pin`);
+    return data;
+  }, []);
+  const unpinMessage = useCallback(async (messageId) => {
+    const { data } = await api.delete(`/messages/${messageId}/pin`);
+    return data;
+  }, []);
+  const listPinned = useCallback(async (convId) => {
+    const { data } = await api.get(`/conversations/${convId}/pinned`);
+    return data;
+  }, []);
+
   // Phase 8B: block / unblock / report
   const blockUser = useCallback(async (userId) => {
     const { data } = await api.post(`/users/${userId}/block`);
@@ -833,6 +847,44 @@ export const MessengerProvider = ({ children }) => {
       return;
     }
 
+    // Phase 8C — pin / unpin
+    if (data.type === "message_pinned") {
+      const { conversation_id, message, popped_message_id } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        const next = list.map((m) => {
+          if (m.id === message?.id) return { ...m, pinned_in_conv: true };
+          if (popped_message_id && m.id === popped_message_id) return { ...m, pinned_in_conv: false };
+          return m;
+        });
+        return { ...s, messagesByConv: { ...s.messagesByConv, [conversation_id]: next } };
+      });
+      return;
+    }
+    if (data.type === "message_unpinned") {
+      const { conversation_id, message_id } = data;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        const next = list.map((m) => (m.id === message_id ? { ...m, pinned_in_conv: false } : m));
+        return { ...s, messagesByConv: { ...s.messagesByConv, [conversation_id]: next } };
+      });
+      return;
+    }
+    // Phase 8C — channel view counts
+    if (data.type === "message_views_updated") {
+      const { conversation_id, message_ids } = data;
+      const idSet = new Set(message_ids || []);
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        const next = list.map((m) => (idSet.has(m.id) ? { ...m, view_count: (m.view_count || 0) + 1 } : m));
+        return { ...s, messagesByConv: { ...s.messagesByConv, [conversation_id]: next } };
+      });
+      return;
+    }
+
     if (data.type === "conversation_new" || data.type === "group_updated" || data.type === "conversation_removed" || data.type === "conversation_deleted") {
       fetchConversations().catch(() => {});
       if (data.type === "conversation_removed" || data.type === "conversation_deleted") {
@@ -1080,6 +1132,9 @@ export const MessengerProvider = ({ children }) => {
       blockUser,
       unblockUser,
       reportUser,
+      pinMessage,
+      unpinMessage,
+      listPinned,
     }),
     [
       sendMessage,
@@ -1125,6 +1180,9 @@ export const MessengerProvider = ({ children }) => {
       blockUser,
       unblockUser,
       reportUser,
+      pinMessage,
+      unpinMessage,
+      listPinned,
     ]
   );
 

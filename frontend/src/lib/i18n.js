@@ -221,6 +221,12 @@ const DICTIONARY = {
     lastSeenRecently: "Last seen recently",
     messageButton: "Message",
     loading: "Loading…",
+    pinMessage: "Pin message",
+    unpinMessage: "Unpin message",
+    pinnedMessages: "Pinned messages",
+    viewsCount: "{n} views",
+    groupBadge: "GROUP",
+    pinFailed: "Failed to pin",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -442,6 +448,12 @@ const DICTIONARY = {
     lastSeenRecently: "آخرین بازدید اخیراً",
     messageButton: "پیام",
     loading: "در حال بارگذاری…",
+    pinMessage: "پین کردن پیام",
+    unpinMessage: "آن‌پین کردن پیام",
+    pinnedMessages: "پیام‌های پین شده",
+    viewsCount: "{n} بازدید",
+    groupBadge: "گروه",
+    pinFailed: "پین کردن ناموفق بود",
   },
 };
 

@@ -27,6 +27,7 @@ import { SavedAvatar } from "./ChatList";
 import { Hand, MessageCircle } from "lucide-react";
 import { EmptyState as EmptyChip } from "../EmptyState";
 import { useUserProfile } from "./UserProfileDrawer";
+import { PinnedMessagesBar } from "./PinnedMessagesBar";
 import { formatRelative, isWithinMinutes, dayKey, relativeDayLabel } from "../../lib/time";
 
 export const EmptyState = () => {
@@ -381,6 +382,12 @@ export const ChatPanel = ({ conversation }) => {
           />
         </div>
       ) : (
+        <>
+        <PinnedMessagesBar
+          conversationId={conversation?.id}
+          messages={messages}
+          onJump={(msgId) => handleJumpToReply(msgId)}
+        />
         <div
           ref={scrollRef}
           onScroll={onScroll}
@@ -441,9 +448,8 @@ export const ChatPanel = ({ conversation }) => {
           })
         )}
       </div>
+      </>
       )}
-
-      {/* Scroll-down pill */}
       {!autoScroll && pendingNew > 0 && !(isSaved && savedTab === "starred") && (
         <button
           onClick={() => {

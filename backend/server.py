@@ -418,6 +418,8 @@ def public_message(m: dict) -> dict:
         "deleted_for_everyone": False,
         "starred_by": m.get("starred_by") or [],
         "reactions": m.get("reactions") or [],
+        "pinned_in_conv": bool(m.get("pinned_in_conv")),
+        "view_count": int(m.get("view_count") or 0),
     }
 
 async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:
@@ -863,9 +865,31 @@ async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_
         raise HTTPException(404, "Conversation not found")
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
-    # Phase 6: channels do not track per-user read receipts
+    # Phase 8C: channels track view counts instead of per-user seen status.
     if conv.get("kind") == "channel":
-        return {"updated": 0}
+        me_id = current_user["_id"]
+        unviewed = await db.messages.find({
+            "conversation_id": conv_id,
+            "sender_id": {"$ne": me_id},
+            "deleted_for_everyone": {"$ne": True},
+            "viewers": {"$ne": me_id},
+        }, {"_id": 1}).to_list(500)
+        if not unviewed:
+            return {"updated": 0, "viewed": 0}
+        ids = [m["_id"] for m in unviewed]
+        await db.messages.update_many(
+            {"_id": {"$in": ids}},
+            {"$addToSet": {"viewers": me_id}, "$inc": {"view_count": 1}},
+        )
+        # Broadcast batch update to all channel participants
+        payload = {
+            "type": "message_views_updated",
+            "conversation_id": conv_id,
+            "message_ids": ids,
+        }
+        for pid in conv.get("participants") or []:
+            await manager.send_to_user(pid, payload)
+        return {"updated": 0, "viewed": len(ids)}
     now = datetime.now(timezone.utc).isoformat()
     targets = await db.messages.find({
         "conversation_id": conv_id,
@@ -2065,6 +2089,106 @@ async def group_invite_revoke(conv_id: str, current_user: dict = Depends(get_cur
 async def channel_invite_create(conv_id: str, current_user: dict = Depends(get_current_user)):
     return await _rotate_invite(conv_id, "channel", current_user)
 
+# ---------------------------------------------------------------------------
+# Phase 8C — Pin messages in conversations + channel view counts
+# ---------------------------------------------------------------------------
+PIN_LIMIT = 5
+
+def _can_pin(conv: dict, user_id: str) -> bool:
+    kind = conv.get("kind")
+    if kind in ("group", "channel"):
+        return user_id in (conv.get("admins") or [])
+    # dm / saved: any participant
+    return user_id in (conv.get("participants") or [])
+
+
+@api_router.post("/messages/{message_id}/pin")
+async def pin_message(message_id: str, current_user: dict = Depends(get_current_user)):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    conv_id = msg["conversation_id"]
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in (conv.get("participants") or []):
+        raise HTTPException(403, "Not a participant")
+    if not _can_pin(conv, current_user["_id"]):
+        raise HTTPException(403, "Only admins can pin in this conversation")
+    if msg.get("deleted_for_everyone"):
+        raise HTTPException(400, "Cannot pin a deleted message")
+    pinned = list(conv.get("pinned_message_ids") or [])
+    if message_id in pinned:
+        return public_message(msg)
+    pinned.append(message_id)
+    popped = None
+    if len(pinned) > PIN_LIMIT:
+        popped = pinned.pop(0)
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"pinned_message_ids": pinned}})
+    await db.messages.update_one({"_id": message_id}, {"$set": {"pinned_in_conv": True}})
+    if popped:
+        await db.messages.update_one({"_id": popped}, {"$set": {"pinned_in_conv": False}})
+    fresh = await db.messages.find_one({"_id": message_id})
+    pm = public_message(fresh)
+    payload = {
+        "type": "message_pinned",
+        "conversation_id": conv_id,
+        "message": pm,
+        "popped_message_id": popped,
+        "pinned_message_ids": pinned,
+    }
+    for pid in conv.get("participants") or []:
+        await manager.send_to_user(pid, payload)
+    return pm
+
+
+@api_router.delete("/messages/{message_id}/pin")
+async def unpin_message(message_id: str, current_user: dict = Depends(get_current_user)):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    conv_id = msg["conversation_id"]
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in (conv.get("participants") or []):
+        raise HTTPException(403, "Not a participant")
+    if not _can_pin(conv, current_user["_id"]):
+        raise HTTPException(403, "Only admins can unpin in this conversation")
+    pinned = [pid for pid in (conv.get("pinned_message_ids") or []) if pid != message_id]
+    await db.conversations.update_one({"_id": conv_id}, {"$set": {"pinned_message_ids": pinned}})
+    await db.messages.update_one({"_id": message_id}, {"$set": {"pinned_in_conv": False}})
+    payload = {
+        "type": "message_unpinned",
+        "conversation_id": conv_id,
+        "message_id": message_id,
+        "pinned_message_ids": pinned,
+    }
+    for pid in conv.get("participants") or []:
+        await manager.send_to_user(pid, payload)
+    return {"ok": True, "pinned_message_ids": pinned}
+
+
+@api_router.get("/conversations/{conv_id}/pinned")
+async def list_pinned(conv_id: str, current_user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in (conv.get("participants") or []):
+        raise HTTPException(403, "Not a participant")
+    ids = list(conv.get("pinned_message_ids") or [])
+    if not ids:
+        return []
+    docs = await db.messages.find({"_id": {"$in": ids}}).to_list(PIN_LIMIT + 5)
+    by_id = {d["_id"]: d for d in docs}
+    out = []
+    # Preserve insertion order; newest pin last → reverse to newest-first per spec.
+    for mid in reversed(ids):
+        if mid in by_id:
+            out.append(public_message(by_id[mid]))
+    return out
+
+
 @api_router.delete("/channels/{conv_id}/invite-link")
 async def channel_invite_revoke(conv_id: str, current_user: dict = Depends(get_current_user)):
     return await _revoke_invite(conv_id, "channel", current_user)
@@ -2321,6 +2445,25 @@ async def on_startup():
             logger.info(f"Migration (Phase 8B): backfilled {res_p8.modified_count} users with blocked_users=[]")
     except Exception as _e:
         logger.warning(f"blocked_users backfill skipped: {_e}")
+
+    # Phase 8C: backfill pinned_message_ids on conversations + pinned_in_conv on messages
+    try:
+        res_p8c1 = await db.conversations.update_many(
+            {"pinned_message_ids": {"$exists": False}},
+            {"$set": {"pinned_message_ids": []}},
+        )
+        res_p8c2 = await db.messages.update_many(
+            {"pinned_in_conv": {"$exists": False}},
+            {"$set": {"pinned_in_conv": False}},
+        )
+        if res_p8c1.modified_count or res_p8c2.modified_count:
+            logger.info(
+                f"Migration (Phase 8C): backfilled "
+                f"{res_p8c1.modified_count} conversations + "
+                f"{res_p8c2.modified_count} messages with pinned defaults"
+            )
+    except Exception as _e:
+        logger.warning(f"pinned backfill skipped: {_e}")
 
     count = await db.users.count_documents({})
     if count == 0:

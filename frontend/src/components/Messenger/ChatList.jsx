@@ -1,6 +1,6 @@
 import React, { memo, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Bookmark, Pin, BellOff, PinOff, Bell, CheckCheck, Megaphone, MessageCircle, X, Trash2, Ban, Flag, Check } from "lucide-react";
+import { Bookmark, Pin, BellOff, PinOff, Bell, CheckCheck, Megaphone, Users, MessageCircle, X, Trash2, Ban, Flag, Check } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import {
@@ -156,6 +156,9 @@ const ChatRow = memo(
               {title}
               {isChannel && (
                 <Megaphone className="w-3 h-3 text-[#9ABEFF] shrink-0" data-testid={`chat-channel-badge-${testIdSlug}`} />
+              )}
+              {isGroup && (
+                <Users className="w-3 h-3 text-[#9ABEFF] shrink-0" data-testid={`chat-group-badge-${testIdSlug}`} />
               )}
               {isSaved && (
                 <span
