@@ -107,9 +107,9 @@ const MessageBubbleImpl = ({
         <div
           className="max-w-[70%] px-3 py-2 rounded-2xl text-xs italic"
           style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            color: "rgba(255,255,255,0.55)",
+            background: "var(--bubble-theirs-bg)",
+            border: "1px solid var(--border-glass)",
+            color: "var(--text-muted)",
           }}
         >
           {t("messageWasDeleted")}
@@ -141,14 +141,14 @@ const MessageBubbleImpl = ({
             ? { background: "transparent" }
             : mine
             ? {
-                background: "linear-gradient(135deg,#3B9EFF,#A78BFA)",
-                boxShadow: "0 10px 30px -12px rgba(59,158,255,0.45)",
-                color: "white",
+                background: "var(--bubble-mine-bg)",
+                boxShadow: "0 10px 30px -12px var(--accent-glow)",
+                color: "var(--bubble-mine-text)",
               }
             : {
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.10)",
-                color: "white",
+                background: "var(--bubble-theirs-bg)",
+                border: "1px solid var(--border-glass)",
+                color: "var(--bubble-theirs-text)",
               }
         }
       >
@@ -192,7 +192,7 @@ const MessageBubbleImpl = ({
           className={`flex items-center gap-1 text-[10px] mt-0.5 ${
             mine ? "justify-end" : "justify-start"
           }`}
-          style={{ color: mine ? "rgba(255,255,255,0.78)" : "rgba(255,255,255,0.55)" }}
+          style={{ color: mine ? "rgba(255,255,255,0.78)" : "var(--text-muted)" }}
         >
           {message.edited && (
             <span data-testid="message-edited-marker">{t("edited")}</span>

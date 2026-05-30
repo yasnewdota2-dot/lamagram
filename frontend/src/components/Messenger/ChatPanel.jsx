@@ -224,8 +224,8 @@ export const ChatPanel = ({ conversation }) => {
     >
       {/* Header */}
       <div
-        className="flex items-center gap-3 px-4 py-3 border-b border-white/10"
-        style={{ background: "rgba(11,11,18,0.55)", backdropFilter: "blur(16px)" }}
+        className="flex items-center gap-3 px-4 py-3"
+        style={{ background: "var(--bg-glass-strong)", borderBottom: "1px solid var(--border-glass)", backdropFilter: "blur(16px)" }}
         data-testid="chat-header"
       >
         {isSaved ? (
@@ -321,8 +321,8 @@ export const ChatPanel = ({ conversation }) => {
       {/* Saved Messages tab strip (Notes / Starred) */}
       {isSaved && (
         <div
-          className="flex items-center gap-2 px-3 py-2 border-b border-white/10"
-          style={{ background: "rgba(11,11,18,0.45)", backdropFilter: "blur(12px)" }}
+          className="flex items-center gap-2 px-3 py-2"
+          style={{ background: "var(--bg-glass)", borderBottom: "1px solid var(--border-glass)", backdropFilter: "blur(12px)" }}
           data-testid="saved-tab-strip"
         >
           {[
@@ -338,14 +338,14 @@ export const ChatPanel = ({ conversation }) => {
                 style={
                   active
                     ? {
-                        background: "linear-gradient(135deg,#3B9EFF,#A78BFA)",
+                        background: "var(--accent-gradient)",
                         color: "white",
-                        boxShadow: "0 6px 18px -8px rgba(59,158,255,0.55)",
+                        boxShadow: "0 6px 18px -8px var(--accent-glow)",
                       }
                     : {
-                        background: "rgba(255,255,255,0.04)",
-                        color: "rgba(255,255,255,0.65)",
-                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "var(--bg-glass)",
+                        color: "var(--text-secondary)",
+                        border: "1px solid var(--border-glass)",
                       }
                 }
                 data-testid={`saved-tab-${tab.key}`}
@@ -439,8 +439,8 @@ export const ChatPanel = ({ conversation }) => {
       {/* Composer */}
       {isChannel && !isAdmin ? (
         <div
-          className="px-5 py-3 text-center text-sm text-white/65 border-t border-white/10 flex items-center justify-center gap-2"
-          style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}
+          className="px-5 py-3 text-center text-sm flex items-center justify-center gap-2"
+          style={{ background: "var(--bg-glass)", color: "var(--text-secondary)", borderTop: "1px solid var(--border-glass)", backdropFilter: "blur(12px)" }}
           data-testid="channel-post-locked"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>

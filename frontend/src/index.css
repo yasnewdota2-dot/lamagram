@@ -349,6 +349,7 @@ body[dir="rtl"] .gm-field label { left: auto; right: 16px; }
 }
 
 html, body { background: var(--bg-base) !important; color: var(--text-primary); transition: background-color 200ms ease; }
+#root { background: transparent !important; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 8px; }
@@ -422,6 +423,20 @@ html, body { background: var(--bg-base) !important; color: var(--text-primary); 
 :root[data-theme="light"] [data-bg="blob-a"] { background: var(--blob-a) !important; }
 :root[data-theme="light"] [data-bg="blob-b"] { background: var(--blob-b) !important; }
 :root[data-theme="light"] [data-bg="blob-c"] { background: var(--blob-c) !important; }
+
+/* Light theme: tone down hardcoded blob colors */
+:root[data-theme="light"] .gm-blob-1 { background: var(--blob-a) !important; opacity: 0.7; }
+:root[data-theme="light"] .gm-blob-2 { background: var(--blob-b) !important; opacity: 0.7; }
+:root[data-theme="light"] .gm-blob-3 { background: var(--blob-c) !important; opacity: 0.6; }
+:root[data-theme="light"] .gm-bg-blobs { mix-blend-mode: normal; }
+
+/* Light theme: body background must override the dark gradient body bg */
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1200px 600px at 90% -10%, rgba(124,92,250,0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(45,127,255,0.08), transparent 60%),
+    var(--bg-base) !important;
+}
 
 /* Glass panels: in light mode, opacity is higher so backdrop is reliable */
 :root[data-theme="light"] .gm-glass {

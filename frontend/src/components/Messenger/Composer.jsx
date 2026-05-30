@@ -162,8 +162,8 @@ export const Composer = ({ conversationId, onUploadError }) => {
   if (recording) {
     return (
       <div
-        className="border-t border-white/10 p-3 sm:p-4"
-        style={{ background: "rgba(11,11,18,0.6)", backdropFilter: "blur(20px)" }}
+        className="border-t p-3 sm:p-4"
+        style={{ background: "var(--bg-glass-strong)", borderColor: "var(--border-glass)", backdropFilter: "blur(20px)" }}
         data-testid="composer-recording"
       >
         <VoiceRecorder
@@ -179,8 +179,8 @@ export const Composer = ({ conversationId, onUploadError }) => {
 
   return (
     <div
-      className="relative border-t border-white/10 p-3 sm:p-4"
-      style={{ background: "rgba(11,11,18,0.6)", backdropFilter: "blur(20px)" }}
+      className="relative border-t p-3 sm:p-4"
+      style={{ background: "var(--bg-glass-strong)", borderColor: "var(--border-glass)", backdropFilter: "blur(20px)" }}
       data-testid="composer"
     >
       {(replyTo || editTarget) && (
@@ -251,7 +251,7 @@ export const Composer = ({ conversationId, onUploadError }) => {
       )}
       <div
         className="flex items-end gap-1 rounded-2xl p-1.5"
-        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)" }}
+        style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}
       >
         <button
           type="button"
@@ -285,8 +285,8 @@ export const Composer = ({ conversationId, onUploadError }) => {
           onKeyDown={onKeyDown}
           rows={1}
           placeholder={t("typeMessage")}
-          className="flex-1 bg-transparent outline-none resize-none text-white placeholder-white/40 px-2 py-2 max-h-40"
-          style={{ unicodeBidi: "plaintext", direction: lang === "fa" ? "rtl" : "ltr" }}
+          className="flex-1 bg-transparent outline-none resize-none placeholder-white/40 px-2 py-2 max-h-40"
+          style={{ unicodeBidi: "plaintext", direction: lang === "fa" ? "rtl" : "ltr", color: "var(--text-primary)" }}
           data-testid="composer-input"
         />
         {text.trim() ? (

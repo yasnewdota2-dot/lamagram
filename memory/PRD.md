@@ -182,3 +182,17 @@ A real-time Telegram-style messenger (FastAPI + React + MongoDB) with a dark gla
 
 ## Test credentials
 See `/app/memory/test_credentials.md`. Primary: **alice / password123**.
+
+## Chunk 7B — Theme system + CSS variable refactor (2026-02-Feb) — COMPLETE
+- [x] `lib/theme.jsx` — ThemeProvider w/ localStorage persistence (`glass_theme`) + html[data-theme]
+- [x] Full CSS variable system in index.css (--bg-base, --bg-glass, --text-primary, --bubble-mine-bg, etc.)
+- [x] Targeted refactor of 5 core files to consume CSS vars directly: Home.jsx, ChatPanel.jsx, MessageBubble.jsx, Composer.jsx, (ChatList uses Tailwind + override layer)
+- [x] Transitional override layer in index.css covers lower-priority dialogs/components (acknowledged debt)
+- [x] Light-mode body bg + #root transparent fix (root was bleeding hardcoded dark var)
+- [x] Light-mode gm-blob colors toned down (replaced solid #3B9EFF/#A78BFA gradient with subtle theme vars)
+- [x] Verified visually: Dark + Light screenshots both render without breakage
+
+## Areas of remaining tech debt (Chunk 7C polish backlog)
+- Some inline `style={{ background: rgba(11,11,18,...) }}` in dialogs still routed through override layer
+- "PINNED" pill text color (`#C9B8FF`) is low-contrast in light mode
+- Typography/spacing/scrollbar/skeleton/empty-state polish pass deferred

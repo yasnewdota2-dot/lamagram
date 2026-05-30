@@ -83,42 +83,46 @@ export default function Home() {
             <div
               className="flex items-center gap-3 p-3 rounded-2xl"
               style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--bg-glass)",
+                border: "1px solid var(--border-glass)",
               }}
               data-testid="sidebar-profile-card"
             >
               <UserAvatar user={user} size={42} ring testId="sidebar-avatar" />
               <div className="min-w-0 flex-1">
-                <div className="text-white font-semibold truncate" data-testid="sidebar-display-name">
+                <div className="font-semibold truncate" style={{ color: "var(--text-primary)" }} data-testid="sidebar-display-name">
                   {user?.display_name || user?.username}
                 </div>
-                <div className="text-xs text-[var(--gm-text-muted)] truncate" data-testid="sidebar-username">
+                <div className="text-xs truncate" style={{ color: "var(--text-muted)" }} data-testid="sidebar-username">
                   @{user?.username}
                 </div>
               </div>
               <Link
                 to="/settings"
-                className="p-2 rounded-xl hover:bg-white/10 transition-colors"
+                className="p-2 rounded-xl transition-colors"
+                style={{ background: "transparent" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-glass-strong)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 aria-label="settings"
                 data-testid="sidebar-settings-link"
               >
-                <SettingsIcon className="w-5 h-5 text-[var(--gm-text-muted)]" />
+                <SettingsIcon className="w-5 h-5" style={{ color: "var(--text-secondary)" }} />
               </Link>
             </div>
 
             {/* Search */}
             <div className="relative mt-4 flex items-center gap-2" data-testid="sidebar-search">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gm-text-muted)]" />
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t("searchPlaceholder2")}
-                  className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm text-white"
+                  className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "var(--bg-glass)",
+                    border: "1px solid var(--border-glass)",
+                    color: "var(--text-primary)",
                   }}
                   data-testid="sidebar-search-input"
                 />
@@ -129,7 +133,7 @@ export default function Home() {
                     aria-label="clear search"
                     data-testid="sidebar-search-clear"
                   >
-                    <X className="w-4 h-4 text-[var(--gm-text-muted)]" />
+                    <X className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
                   </button>
                 )}
               </div>
@@ -137,7 +141,7 @@ export default function Home() {
                 <DropdownMenuTrigger asChild>
                   <button
                     className="p-2.5 rounded-xl shrink-0 text-white"
-                    style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)", boxShadow: "0 6px 18px -6px rgba(59,158,255,0.55)" }}
+                    style={{ background: "var(--accent-gradient)", boxShadow: "0 6px 18px -6px var(--accent-glow)" }}
                     aria-label={t("newChat")}
                     data-testid="sidebar-new-button"
                   >
@@ -146,7 +150,7 @@ export default function Home() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   className="min-w-[160px]"
-                  style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  style={{ background: "var(--bg-glass-strong)", backdropFilter: "blur(18px)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
                   data-testid="sidebar-new-menu"
                 >
                   <DropdownMenuItem
