@@ -44,14 +44,27 @@ USERNAME_RE = re.compile(r'^[a-z0-9_]{3,20}$')
 ALLOWED_MIMES = {
     "image": {"image/jpeg", "image/png", "image/webp", "image/gif"},
     "video": {"video/mp4", "video/webm", "video/quicktime"},
-    "voice": {"audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/aac"},
+    "voice": {
+        "audio/webm", "audio/ogg", "audio/mpeg", "audio/mp3",
+        "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac",
+        "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wav",
+    },
 }
 MEDIA_EXT_MAP = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
     "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
-    "audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mpeg": ".mp3",
-    "audio/mp4": ".m4a", "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/aac": ".aac",
+    "audio/webm": ".webm", "audio/ogg": ".ogg",
+    "audio/mpeg": ".mp3", "audio/mp3": ".mp3",
+    "audio/mp4": ".m4a", "audio/m4a": ".m4a", "audio/x-m4a": ".m4a",
+    "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/wave": ".wav", "audio/vnd.wav": ".wav",
+    "audio/aac": ".aac",
 }
+
+def normalize_mime(raw: str) -> str:
+    """Strip codec parameters and whitespace: 'audio/webm;codecs=opus' -> 'audio/webm'."""
+    if not raw:
+        return ""
+    return raw.split(";")[0].strip().lower()
 
 # ---------------------------------------------------------------------------
 # Database
@@ -831,7 +844,7 @@ async def upload_message_media(
     if current_user["_id"] not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
 
-    ctype = (file.content_type or "application/octet-stream").lower()
+    ctype = normalize_mime(file.content_type) or "application/octet-stream"
     if kind == "image" and not ctype.startswith("image/"):
         raise HTTPException(400, "Unsupported image type")
     if kind == "video" and not ctype.startswith("video/"):
