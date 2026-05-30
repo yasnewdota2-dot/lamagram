@@ -78,7 +78,7 @@ export default function Home() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={t("searchPlaceholder")}
+                placeholder={t("searchPlaceholder2")}
                 className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm text-white"
                 style={{
                   background: "rgba(255,255,255,0.04)",
@@ -101,7 +101,14 @@ export default function Home() {
             {/* Either search results OR chat list */}
             <div className="flex-1 mt-3 overflow-y-auto pr-1 min-h-0">
               {query.trim() ? (
-                <SearchResults query={query} onPick={onPickUser} />
+                <>
+                  {query.trim().startsWith("@") && (
+                    <div className="gm-chip mb-2" data-testid="search-username-hint">
+                      {t("searchingUsernames")}
+                    </div>
+                  )}
+                  <SearchResults query={query} onPick={onPickUser} />
+                </>
               ) : (
                 <ChatList />
               )}

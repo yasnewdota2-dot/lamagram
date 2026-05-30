@@ -190,6 +190,16 @@ async def signup(body: SignupRequest):
         "is_online": True,
     }
     await db.users.insert_one(user_doc)
+    # Auto-create Saved Messages for the new user
+    saved_now = datetime.now(timezone.utc).isoformat()
+    await db.conversations.insert_one({
+        "_id": str(uuid.uuid4()),
+        "kind": "saved",
+        "participants": [user_doc["_id"]],
+        "last_message": None,
+        "last_message_at": None,
+        "created_at": saved_now,
+    })
     token = create_access_token(user_doc["_id"], user_doc["username"])
     return {"access_token": token, "token_type": "bearer", "user": public_user(user_doc)}
 
@@ -325,19 +335,26 @@ def public_message(m: dict) -> dict:
     }
 
 async def public_conversation(c: dict, me_id: str) -> dict:
-    other_id = next((p for p in c["participants"] if p != me_id), None)
-    other = await db.users.find_one({"_id": other_id}) if other_id else None
-    unread = await db.messages.count_documents({
-        "conversation_id": c["_id"],
-        "sender_id": {"$ne": me_id},
-        "status": {"$ne": "seen"},
-        "deleted": {"$ne": True},
-    })
-    other_pub = public_user(other) if other else None
-    if other_pub and other_id:
-        other_pub["is_online"] = manager.is_online(other_id) or bool(other.get("is_online"))
+    kind = c.get("kind", "dm")
+    if kind == "saved":
+        me = await db.users.find_one({"_id": me_id})
+        other_pub = public_user(me) if me else None
+        unread = 0
+    else:
+        other_id = next((p for p in c["participants"] if p != me_id), None)
+        other = await db.users.find_one({"_id": other_id}) if other_id else None
+        unread = await db.messages.count_documents({
+            "conversation_id": c["_id"],
+            "sender_id": {"$ne": me_id},
+            "status": {"$ne": "seen"},
+            "deleted": {"$ne": True},
+        })
+        other_pub = public_user(other) if other else None
+        if other_pub and other_id:
+            other_pub["is_online"] = manager.is_online(other_id) or bool(other.get("is_online"))
     return {
         "id": c["_id"],
+        "kind": kind,
         "participants": c["participants"],
         "other_user": other_pub,
         "last_message": c.get("last_message"),
@@ -396,6 +413,25 @@ async def search_users(q: str = "", current_user: dict = Depends(get_current_use
     q = (q or "").strip()
     if not q:
         return []
+    # Username-first search: '@xxx' → exact then prefix on username
+    if q.startswith("@"):
+        q2 = q[1:].strip().lower()
+        if not q2:
+            return []
+        safe = re.escape(q2)
+        cursor = db.users.find({
+            "_id": {"$ne": current_user["_id"]},
+            "username": {"$regex": f"^{safe}"},
+        }).limit(20)
+        docs = await cursor.to_list(20)
+        docs.sort(key=lambda d: 0 if d["username"] == q2 else 1)
+        out = []
+        for d in docs:
+            u = public_user(d)
+            u["is_online"] = manager.is_online(d["_id"]) or bool(d.get("is_online"))
+            out.append(u)
+        return out
+
     safe_lower = re.escape(q.lower())
     safe_any = re.escape(q)
     cursor = db.users.find({
@@ -413,6 +449,15 @@ async def search_users(q: str = "", current_user: dict = Depends(get_current_use
         out.append(u)
     return out
 
+@api_router.get("/users/by-username/{username}")
+async def get_user_by_username(username: str, current_user: dict = Depends(get_current_user)):
+    u = await db.users.find_one({"username": username.strip().lower()})
+    if not u:
+        raise HTTPException(404, "User not found")
+    pu = public_user(u)
+    pu["is_online"] = manager.is_online(u["_id"]) or bool(u.get("is_online"))
+    return pu
+
 @api_router.get("/users/{user_id}")
 async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
     u = await db.users.find_one({"_id": user_id})
@@ -425,6 +470,24 @@ async def get_user(user_id: str, current_user: dict = Depends(get_current_user))
 # ---------------------------------------------------------------------------
 # Routes — Conversations & Messages
 # ---------------------------------------------------------------------------
+@api_router.post("/conversations/saved")
+async def create_or_get_saved(current_user: dict = Depends(get_current_user)):
+    me_id = current_user["_id"]
+    existing = await db.conversations.find_one({"kind": "saved", "participants": [me_id]})
+    if existing:
+        return await public_conversation(existing, me_id)
+    now = datetime.now(timezone.utc).isoformat()
+    conv = {
+        "_id": str(uuid.uuid4()),
+        "kind": "saved",
+        "participants": [me_id],
+        "last_message": None,
+        "last_message_at": None,
+        "created_at": now,
+    }
+    await db.conversations.insert_one(conv)
+    return await public_conversation(conv, me_id)
+
 @api_router.post("/conversations")
 async def create_or_get_conversation(body: CreateConversationRequest, current_user: dict = Depends(get_current_user)):
     other_id = body.user_id
@@ -453,8 +516,10 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
     cursor = db.conversations.find({"participants": current_user["_id"]})
     docs = await cursor.to_list(500)
     out = [await public_conversation(c, current_user["_id"]) for c in docs]
-    out.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
-    return out
+    saved = [c for c in out if c.get("kind") == "saved"]
+    dm = [c for c in out if c.get("kind") != "saved"]
+    dm.sort(key=lambda x: x.get("last_message_at") or x.get("created_at") or "", reverse=True)
+    return saved + dm
 
 @api_router.get("/conversations/{conv_id}/messages")
 async def get_messages(
@@ -653,8 +718,12 @@ async def upload_message_media(
                 pass
 
     other_id = next((p for p in conv["participants"] if p != current_user["_id"]), None)
+    is_saved = conv.get("kind") == "saved"
     now_iso = now.isoformat()
-    initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
+    if is_saved:
+        initial_status = "seen"
+    else:
+        initial_status = "delivered" if (other_id and manager.is_online(other_id)) else "sent"
     msg = {
         "_id": str(uuid.uuid4()),
         "conversation_id": conversation_id,
@@ -664,8 +733,8 @@ async def upload_message_media(
         "media": media,
         "status": initial_status,
         "created_at": now_iso,
-        "seen_at": None,
-        "delivered_at": now_iso if initial_status == "delivered" else None,
+        "seen_at": now_iso if is_saved else None,
+        "delivered_at": now_iso if initial_status in ("delivered", "seen") else None,
         "deleted": False,
     }
     await db.messages.insert_one(msg)
@@ -910,6 +979,31 @@ async def on_startup():
                 (alice, "Always."),
             ])
             logger.info("Seeded 2 demo conversations (alice↔bob, alice↔charlie)")
+
+    # Migration: ensure every user has a Saved Messages conversation
+    existing_saved = await db.conversations.find(
+        {"kind": "saved"}, {"participants": 1}
+    ).to_list(None)
+    saved_user_ids = set()
+    for c in existing_saved:
+        ps = c.get("participants") or []
+        if ps:
+            saved_user_ids.add(ps[0])
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = 0
+    async for u in db.users.find({}, {"_id": 1}):
+        if u["_id"] not in saved_user_ids:
+            await db.conversations.insert_one({
+                "_id": str(uuid.uuid4()),
+                "kind": "saved",
+                "participants": [u["_id"]],
+                "last_message": None,
+                "last_message_at": None,
+                "created_at": now_iso,
+            })
+            created += 1
+    if created:
+        logger.info(f"Migration: created {created} Saved Messages conversations")
 
 @app.on_event("shutdown")
 async def on_shutdown():

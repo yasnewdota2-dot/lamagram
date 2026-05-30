@@ -171,9 +171,26 @@ export const MessengerProvider = ({ children }) => {
     setConversations((cs) => {
       const exists = cs.find((c) => c.id === data.id);
       if (exists) return cs.map((c) => (c.id === data.id ? { ...c, ...data } : c));
+      // Insert after saved (if any)
+      const savedIdx = cs.findIndex((c) => c.kind === "saved");
+      if (savedIdx === 0) return [cs[0], data, ...cs.slice(1)];
       return [data, ...cs];
     });
     return data;
+  }, []);
+
+  const ensureSavedConversation = useCallback(async () => {
+    try {
+      const { data } = await api.post("/conversations/saved");
+      setConversations((cs) => {
+        const exists = cs.find((c) => c.id === data.id);
+        if (exists) return cs;
+        return [data, ...cs.filter((c) => c.kind !== "saved")];
+      });
+      return data;
+    } catch {
+      return null;
+    }
   }, []);
 
   const searchUsers = useCallback(async (q) => {
@@ -251,9 +268,21 @@ export const MessengerProvider = ({ children }) => {
             if (message.sender_id !== meId && conversation_id !== activeId) {
               updated.unread_count = (found.unread_count || 0) + 1;
             }
-            next = [updated, ...cs.filter((c) => c.id !== conversation_id)];
+            // Keep Saved Messages pinned at top
+            const others = cs.filter((c) => c.id !== conversation_id);
+            if (updated.kind === "saved") {
+              next = [updated, ...others.filter((c) => c.kind !== "saved")];
+            } else {
+              const savedIdx = others.findIndex((c) => c.kind === "saved");
+              if (savedIdx >= 0) {
+                const savedConv = others[savedIdx];
+                const rest = others.filter((c) => c.id !== savedConv.id);
+                next = [savedConv, updated, ...rest];
+              } else {
+                next = [updated, ...others];
+              }
+            }
           } else {
-            // unknown conversation — refetch list
             fetchConversations().catch(() => {});
             return cs;
           }
@@ -392,6 +421,7 @@ export const MessengerProvider = ({ children }) => {
       return;
     }
     fetchConversations().catch(() => {});
+    ensureSavedConversation().catch(() => {});
     connect();
     return () => {
       disconnect();
@@ -420,6 +450,7 @@ export const MessengerProvider = ({ children }) => {
     uploadMedia,
     sendTyping,
     openOrCreateConversation,
+    ensureSavedConversation,
     fetchConversations,
     loadMessages,
     searchUsers,

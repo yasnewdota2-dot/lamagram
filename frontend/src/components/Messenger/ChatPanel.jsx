@@ -10,6 +10,7 @@ import { TypingDots } from "./TypingDots";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
+import { SavedAvatar } from "./ChatList";
 import { formatRelative, isWithinMinutes } from "../../lib/time";
 
 export const EmptyState = () => {
@@ -136,6 +137,8 @@ export const ChatPanel = ({ conversation }) => {
 
   if (!conversation) return <EmptyState />;
 
+  const isSaved = conversation.kind === "saved";
+
   return (
     <div
       className="flex flex-col h-full relative"
@@ -150,28 +153,38 @@ export const ChatPanel = ({ conversation }) => {
         style={{ background: "rgba(11,11,18,0.55)", backdropFilter: "blur(16px)" }}
         data-testid="chat-header"
       >
-        <div className="relative">
-          <UserAvatar user={other} size={42} testId="chat-header-avatar" />
-          <span className="absolute -bottom-0.5 right-0">
-            <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
-          </span>
-        </div>
+        {isSaved ? (
+          <SavedAvatar size={42} />
+        ) : (
+          <div className="relative">
+            <UserAvatar user={other} size={42} testId="chat-header-avatar" />
+            <span className="absolute -bottom-0.5 right-0">
+              <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
+            </span>
+          </div>
+        )}
         <div className="min-w-0 flex-1">
-          <div className="text-white font-semibold truncate" data-testid="chat-header-name">
-            {other?.display_name || other?.username}
+          <div className="text-white font-semibold truncate flex items-center gap-2" data-testid="chat-header-name">
+            {isSaved ? t("savedMessages") : (other?.display_name || other?.username)}
           </div>
           <div className="text-xs text-[var(--gm-text-muted)] truncate" data-testid="chat-header-presence">
-            {otherTyping ? (
+            {isSaved ? (
+              <span>{t("savedSubtitle")}</span>
+            ) : otherTyping ? (
               <span className="text-[#9ABEFF] flex items-center gap-2">
                 <TypingDots />
                 {t("typing")}
               </span>
             ) : isOnline ? (
-              <span>{t("online")}</span>
-            ) : lastSeen ? (
-              <span>{t("lastSeen")} {formatRelative(lastSeen, lang)}</span>
+              <span className="flex items-center gap-2">
+                <span>{t("online")}</span>
+                {other?.username && <span className="text-white/40">· @{other.username}</span>}
+              </span>
             ) : (
-              <span>{t("offline")}</span>
+              <span className="flex items-center gap-2">
+                {lastSeen ? <span>{t("lastSeen")} {formatRelative(lastSeen, lang)}</span> : <span>{t("offline")}</span>}
+                {other?.username && <span className="text-white/40">· @{other.username}</span>}
+              </span>
             )}
           </div>
         </div>
