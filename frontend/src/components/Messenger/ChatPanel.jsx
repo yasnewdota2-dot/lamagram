@@ -129,6 +129,16 @@ export const ChatPanel = ({ conversation }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId]);
 
+  // Listen for global jump-to-message events (from sidebar global search)
+  useEffect(() => {
+    const handler = (e) => {
+      const mid = e?.detail;
+      if (mid) handleJumpToReply(mid);
+    };
+    window.addEventListener("jump-to-message", handler);
+    return () => window.removeEventListener("jump-to-message", handler);
+  }, [handleJumpToReply]);
+
   useEffect(() => {
     const len = messages.length;
     if (len === prevLenRef.current) return;
