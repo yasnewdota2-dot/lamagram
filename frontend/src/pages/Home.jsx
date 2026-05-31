@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Settings as SettingsIcon, Search, X, Plus, MessageSquare, Users, Megaphone, LinkIcon, Sun, Moon } from "lucide-react";
@@ -17,9 +17,10 @@ import { UserAvatar } from "../components/Avatar";
 import { ChatList } from "../components/Messenger/ChatList";
 import { SearchResults } from "../components/Messenger/SearchResults";
 import { ChatPanel } from "../components/Messenger/ChatPanel";
-import { NewGroupDialog } from "../components/Messenger/GroupDialogs";
-import { NewChannelDialog } from "../components/Messenger/NewChannelDialog";
-import { JoinDialog } from "../components/Messenger/JoinDialog";
+// Phase 13 — lazy-load dialogs that only open on user action (smaller initial JS)
+const NewGroupDialog = lazy(() => import("../components/Messenger/GroupDialogs").then((m) => ({ default: m.NewGroupDialog })));
+const NewChannelDialog = lazy(() => import("../components/Messenger/NewChannelDialog").then((m) => ({ default: m.NewChannelDialog })));
+const JoinDialog = lazy(() => import("../components/Messenger/JoinDialog").then((m) => ({ default: m.JoinDialog })));
 import { useConversations, useActiveConvId } from "../lib/messenger";
 import { useIsMobile } from "../lib/useIsMobile";
 
@@ -209,9 +210,11 @@ export default function Home() {
           </motion.main>
         </div>
       </div>
-      <NewGroupDialog open={showNewGroup} onOpenChange={setShowNewGroup} />
-      <NewChannelDialog open={showNewChannel} onOpenChange={setShowNewChannel} />
-      <JoinDialog open={showJoinDialog} onOpenChange={setShowJoinDialog} />
+      <Suspense fallback={null}>
+        {showNewGroup && <NewGroupDialog open={showNewGroup} onOpenChange={setShowNewGroup} />}
+        {showNewChannel && <NewChannelDialog open={showNewChannel} onOpenChange={setShowNewChannel} />}
+        {showJoinDialog && <JoinDialog open={showJoinDialog} onOpenChange={setShowJoinDialog} />}
+      </Suspense>
     </div>
   );
 }

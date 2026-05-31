@@ -664,6 +664,15 @@ export const MessengerProvider = ({ children }) => {
     await api.delete(`/groups/${convId}/admins/${userId}`);
     return { ok: true };
   }, []);
+  // Phase 13 — channel admin promote/demote (parity with group endpoints)
+  const promoteChannelAdmin = useCallback(async (convId, userId) => {
+    await api.post(`/channels/${convId}/admins/${userId}`);
+    return { ok: true };
+  }, []);
+  const demoteChannelAdmin = useCallback(async (convId, userId) => {
+    await api.delete(`/channels/${convId}/admins/${userId}`);
+    return { ok: true };
+  }, []);
   const listGroupMembers = useCallback(async (convId) => {
     const { data } = await api.get(`/groups/${convId}/members`);
     return data;
@@ -1191,6 +1200,8 @@ export const MessengerProvider = ({ children }) => {
       removeGroupMember,
       promoteGroupAdmin,
       demoteGroupAdmin,
+      promoteChannelAdmin,
+      demoteChannelAdmin,
       listGroupMembers,
       loadGroupMembers,
       searchInConversation,
@@ -1248,6 +1259,8 @@ export const MessengerProvider = ({ children }) => {
       removeGroupMember,
       promoteGroupAdmin,
       demoteGroupAdmin,
+      promoteChannelAdmin,
+      demoteChannelAdmin,
       listGroupMembers,
       loadGroupMembers,
       searchInConversation,
