@@ -10,6 +10,7 @@ export const PinnedMessagesBar = ({ conversationId, messages, onJump }) => {
   const { t } = useI18n();
   const { listPinned } = useMessengerActions();
   const [pinned, setPinned] = useState([]);
+  const [cursor, setCursor] = useState(0);
 
   // Initial fetch on conv change
   useEffect(() => {
@@ -36,13 +37,22 @@ export const PinnedMessagesBar = ({ conversationId, messages, onJump }) => {
     });
   }, [messages]);
 
+  // Phase 25b — reset cursor if pinned set shrinks below current index
+  useEffect(() => {
+    if (pinned.length > 0 && cursor >= pinned.length) setCursor(0);
+  }, [pinned.length, cursor]);
+
   const handleClick = useCallback(() => {
     if (!pinned.length) return;
-    onJump?.(pinned[0].id);
-  }, [pinned, onJump]);
+    const idx = cursor % pinned.length;
+    onJump?.(pinned[idx].id);
+    // Phase 25b — cycle to next pinned message on each tap
+    setCursor((c) => (c + 1) % pinned.length);
+  }, [pinned, onJump, cursor]);
 
   if (!pinned.length) return null;
-  const top = pinned[0];
+  const safeIdx = cursor % pinned.length;
+  const top = pinned[safeIdx];
   const preview = (top.text && top.text.trim())
     || (top.type === "image" ? "📷 Photo" : top.type === "video" ? "🎬 Video" : top.type === "voice" ? "🎤 Voice" : top.type === "file" ? "📎 File" : "");
 
@@ -65,7 +75,7 @@ export const PinnedMessagesBar = ({ conversationId, messages, onJump }) => {
       />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-semibold" style={{ color: "var(--accent-blue, #3B9EFF)" }}>
-          {t("pinnedMessages")}{pinned.length > 1 ? ` · ${pinned.length}` : ""}
+          {t("pinnedMessages")}{pinned.length > 1 ? ` · ${safeIdx + 1}/${pinned.length}` : ""}
         </div>
         <div className="text-xs truncate" style={{ color: "var(--text-secondary)" }} data-testid="pinned-top-preview">
           {preview}

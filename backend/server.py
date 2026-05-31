@@ -278,6 +278,31 @@ async def update_me(body: UpdateProfileRequest, current_user: dict = Depends(get
     user = await db.users.find_one({"_id": current_user["_id"]})
     return public_user(user)
 
+
+class BatchUsersRequest(BaseModel):
+    """Phase 25b — batch fetch for poll voter avatars and similar bulk lookups."""
+    model_config = ConfigDict(extra="ignore")
+    ids: List[str] = Field(..., min_length=1, max_length=100)
+
+
+@api_router.post("/users/batch")
+async def batch_users(
+    body: BatchUsersRequest,
+    current_user: dict = Depends(get_current_user),  # noqa: ARG001 — auth gate only
+):
+    seen = set()
+    unique_ids = []
+    for uid in body.ids:
+        if uid and uid not in seen:
+            seen.add(uid)
+            unique_ids.append(uid)
+    if not unique_ids:
+        return []
+    docs = await db.users.find({"_id": {"$in": unique_ids}}).to_list(len(unique_ids))
+    return [public_user(d) for d in docs]
+
+
+
 @api_router.post("/users/me/avatar")
 async def upload_avatar(
     request: Request,

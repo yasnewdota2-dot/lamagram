@@ -19,6 +19,7 @@ import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { useMessengerActions } from "../../lib/messenger";
 import { useLongPress } from "../../lib/useLongPress";
+import { AvatarStack } from "./AvatarStack";
 
 // Telegram-style poll bubble.
 // - Single mode: tap option → instant vote.
@@ -233,7 +234,14 @@ export const PollMessage = ({
                   </div>
                   <span
                     key={opt.vote_count}
-                    className="text-xs font-medium opacity-80 shrink-0 gm-vote-pulse"
+                    className="text-xs font-medium opacity-80 shrink-0 gm-vote-pulse cursor-pointer"
+                    onClick={(e) => {
+                      // Phase 25b — tap % opens View results dialog (non-anon polls only)
+                      if (!canSeeVoters || !hasVoted) return;
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setShowResults(true);
+                    }}
                     data-testid={`poll-option-pct-${opt.id}`}
                   >
                     {pct}%
@@ -255,6 +263,15 @@ export const PollMessage = ({
                     data-testid={`poll-option-bar-${opt.id}`}
                   />
                 </div>
+                {!isAnon && (opt.votes?.length || 0) > 0 && (
+                  <div
+                    className="mt-1.5 relative z-10"
+                    onClick={(e) => e.stopPropagation()}
+                    data-testid={`poll-option-voters-${opt.id}`}
+                  >
+                    <AvatarStack ids={opt.votes} max={3} size={18} testId={`poll-option-avatars-${opt.id}`} />
+                  </div>
+                )}
               </button>
             );
           })}
