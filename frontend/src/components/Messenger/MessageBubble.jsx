@@ -340,7 +340,7 @@ const MessageBubbleImpl = ({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-[180px]"
-            style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.10)" }}
+            style={{ background: "var(--modal-bg)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.10)" }}
             data-testid={`message-actions-menu-${message.id}`}
           >
             <QuickReactionRow messageId={message.id} convId={message.conversation_id} onPicked={() => setMenuOpen(false)} />

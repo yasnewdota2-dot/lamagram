@@ -80,6 +80,13 @@ export const ChatPanel = ({ conversation }) => {
   const [pendingNew, setPendingNew] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState("");
+  // Phase 10 — universal toast auto-dismiss (5s) so error/info banners can't
+  // get stuck on screen waiting for another action to clear them.
+  React.useEffect(() => {
+    if (!toast) return undefined;
+    const id = setTimeout(() => setToast(""), 5000);
+    return () => clearTimeout(id);
+  }, [toast]);
   const [forwardSource, setForwardSource] = useState(null);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [channelInfoOpen, setChannelInfoOpen] = useState(false);
@@ -315,7 +322,7 @@ export const ChatPanel = ({ conversation }) => {
       {selectionMode && (
         <div
           className="flex items-center gap-2 px-3 py-2.5"
-          style={{ background: "rgba(11,11,18,0.96)", borderBottom: "1px solid var(--border-glass)", backdropFilter: "blur(16px)" }}
+          style={{ background: "var(--modal-bg)", borderBottom: "1px solid var(--border-glass)", backdropFilter: "blur(16px)" }}
           data-testid="multi-select-toolbar"
         >
           <button onClick={exitSelection} className="p-1.5 rounded-md hover:bg-white/10" aria-label={t("cancel")} data-testid="multi-select-close">
@@ -655,7 +662,7 @@ export const ChatPanel = ({ conversation }) => {
       />
       {multiDeleteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" data-testid="multi-delete-modal">
-          <div className="w-[min(92vw,420px)] rounded-2xl p-5" style={{ background: "rgba(11,11,18,0.95)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="w-[min(92vw,420px)] rounded-2xl p-5" style={{ background: "var(--modal-bg)", border: "1px solid rgba(255,255,255,0.1)" }}>
             <div className="text-base font-semibold mb-2 text-white" data-testid="multi-delete-title">
               {t("multiDeleteTitle").replace("{n}", String(selectedCount))}
             </div>

@@ -165,10 +165,10 @@ export const ForwardDialog = ({ open, onOpenChange, sourceMessage, sourceMessage
       <DialogContent
         className="p-0 max-w-md w-full overflow-hidden"
         style={{
-          background: "rgba(11,11,18,0.92)",
+          background: "var(--modal-bg)",
           backdropFilter: "blur(22px)",
-          border: "1px solid rgba(255,255,255,0.10)",
-          color: "white",
+          border: "1px solid var(--border-glass)",
+          color: "var(--text-primary)",
         }}
         dir={dir}
         data-testid="forward-dialog"

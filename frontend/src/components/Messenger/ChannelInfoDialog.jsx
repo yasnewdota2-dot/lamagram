@@ -61,7 +61,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
   const onLeave = async () => { try { if (removeChannelMember) await removeChannelMember(convId, "self"); } catch {} onOpenChange(false); };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(7,7,10,0.65)", backdropFilter: "blur(8px)" }} onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }} data-testid="channel-info-dialog">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "var(--modal-backdrop)", backdropFilter: "blur(8px)" }} onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }} data-testid="channel-info-dialog">
       <div className="w-full max-w-md rounded-3xl overflow-hidden flex flex-col" style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", maxHeight: "85vh" }}>
         <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: "1px solid var(--border-glass)" }}>
           <div className="flex items-center gap-2">

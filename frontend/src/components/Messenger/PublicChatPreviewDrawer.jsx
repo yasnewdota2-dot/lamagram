@@ -35,6 +35,12 @@ const PreviewDrawer = ({ handle, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Phase 10 — errors should self-clear after 5s
+  useEffect(() => {
+    if (!err) return undefined;
+    const id = setTimeout(() => setErr(""), 5000);
+    return () => clearTimeout(id);
+  }, [err]);
 
   useEffect(() => {
     let cancelled = false;

@@ -1128,7 +1128,7 @@ export const MessengerProvider = ({ children }) => {
         (s, c) => s + (c.is_muted ? 0 : (c.unread_count || 0)),
         0,
       );
-      document.title = total > 0 ? `(${total}) Glass` : "Glass";
+      document.title = total > 0 ? `(${total}) sexgram` : "sexgram";
     };
     apply();
     return store.subscribe(apply);

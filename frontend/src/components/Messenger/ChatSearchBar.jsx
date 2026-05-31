@@ -41,7 +41,7 @@ export const ChatSearchBar = ({ open, onClose, conversationId, onJump }) => {
     <div
       dir={dir}
       className="flex items-center gap-2 px-3 py-2 border-b border-white/10"
-      style={{ background: "rgba(11,11,18,0.7)", backdropFilter: "blur(18px)" }}
+      style={{ background: "var(--modal-bg)", backdropFilter: "blur(18px)" }}
       data-testid="chat-search-bar"
     >
       <Search className="w-4 h-4 text-white/55" />

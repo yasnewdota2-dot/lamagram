@@ -128,13 +128,13 @@ export const NewChannelDialog = ({ open, onOpenChange }) => {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(7,7,10,0.65)", backdropFilter: "blur(8px)" }}
+      style={{ background: "var(--modal-backdrop)", backdropFilter: "blur(8px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
       data-testid="new-channel-dialog"
     >
       <div
         className="w-full max-w-md rounded-3xl overflow-hidden"
-        style={{ background: "rgba(15,15,22,0.92)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)" }}
+        style={{ background: "var(--modal-bg)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)" }}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <div className="flex items-center gap-2">

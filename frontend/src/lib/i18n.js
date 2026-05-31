@@ -2,8 +2,8 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 
 const DICTIONARY = {
   en: {
-    appName: "Glass Messenger",
-    tagline: "Conversations through glass.",
+    appName: "sexgram",
+    tagline: "Real conversations, real fast.",
     login: "Log in",
     signup: "Sign up",
     logout: "Log out",
@@ -16,7 +16,7 @@ const DICTIONARY = {
     noAccount: "Don't have an account?",
     welcomeBack: "Welcome back",
     welcomeBackSub: "Sign in to continue your conversations.",
-    joinGlass: "Join Glass",
+    joinGlass: "Join sexgram",
     joinGlassSub: "Create your account in under a minute.",
     usernameHint: "3-20 chars · lowercase, numbers, underscores",
     passwordHint: "Minimum 6 characters",
@@ -79,7 +79,7 @@ const DICTIONARY = {
     aboutYou: "About you",
     aboutYouSub: "Tell others a little about yourself.",
     appearance: "Appearance",
-    appearanceSub: "Choose how Glass looks and reads.",
+    appearanceSub: "Choose how sexgram looks and reads.",
     dangerZone: "Account",
     dangerZoneSub: "Manage session and sign out.",
     chatsTitle: "Chats",
@@ -271,7 +271,7 @@ const DICTIONARY = {
   },
   fa: {
     appName: "گلس مسنجر",
-    tagline: "گفتگو از پشت شیشه.",
+    tagline: "گفت‌وگوهای واقعی، سرعت واقعی.",
     login: "ورود",
     signup: "ثبت‌نام",
     logout: "خروج",
@@ -284,7 +284,7 @@ const DICTIONARY = {
     noAccount: "حساب ندارید؟",
     welcomeBack: "خوش برگشتید",
     welcomeBackSub: "برای ادامه گفتگوها وارد شوید.",
-    joinGlass: "به گلس بپیوندید",
+    joinGlass: "به sexgram بپیوندید",
     joinGlassSub: "کمتر از یک دقیقه حساب بسازید.",
     usernameHint: "۳ تا ۲۰ نویسه · حروف کوچک، اعداد، زیرخط",
     passwordHint: "حداقل ۶ نویسه",

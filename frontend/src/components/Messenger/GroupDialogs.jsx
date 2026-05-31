@@ -85,7 +85,7 @@ export const NewGroupDialog = ({ open, onOpenChange, onCreated }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="p-0 max-w-md w-full overflow-hidden"
-        style={{ background: "rgba(11,11,18,0.92)", backdropFilter: "blur(22px)", border: "1px solid rgba(255,255,255,0.1)", color: "white" }}
+        style={{ background: "var(--modal-bg)", backdropFilter: "blur(22px)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
         dir={dir}
         data-testid="new-group-dialog"
       >
@@ -314,7 +314,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="p-0 max-w-md w-full overflow-hidden"
-        style={{ background: "rgba(11,11,18,0.94)", backdropFilter: "blur(22px)", border: "1px solid rgba(255,255,255,0.1)", color: "white" }}
+        style={{ background: "var(--modal-bg)", backdropFilter: "blur(22px)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
         dir={dir}
         data-testid="group-info-dialog"
       >
@@ -625,7 +625,7 @@ export const EditRoleModal = ({ member, kind = "group", onClose, onSave }) => {
     <Dialog open={!!member} onOpenChange={(v) => { if (!v) onClose?.(); }}>
       <DialogContent
         className="p-0 max-w-sm w-full overflow-hidden"
-        style={{ background: "rgba(11,11,18,0.95)", backdropFilter: "blur(22px)", border: "1px solid rgba(255,255,255,0.1)", color: "white" }}
+        style={{ background: "var(--modal-bg)", backdropFilter: "blur(22px)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
         dir={dir}
         data-testid="edit-role-modal"
       >

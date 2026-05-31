@@ -19,7 +19,7 @@ const Shell = ({ children }) => (
     <GlassBackground />
     <div
       className="relative w-full max-w-sm rounded-3xl px-6 py-8 text-center"
-      style={{ background: "rgba(15,15,22,0.85)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)" }}
+      style={{ background: "var(--modal-bg)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)" }}
       data-testid="deep-link-card"
     >
       {children}

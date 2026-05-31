@@ -94,6 +94,12 @@ export const JoinDialog = ({ open, onOpenChange, onJoined }) => {
   const [pasted, setPasted] = useState("");
   const [pasteErr, setPasteErr] = useState("");
   const [pasteBusy, setPasteBusy] = useState(false);
+  // Phase 10 — paste errors must self-clear so they don't persist after the user moves on.
+  useEffect(() => {
+    if (!pasteErr) return undefined;
+    const id = setTimeout(() => setPasteErr(""), 5000);
+    return () => clearTimeout(id);
+  }, [pasteErr]);
 
   useEffect(() => {
     if (!open) {
@@ -180,13 +186,13 @@ export const JoinDialog = ({ open, onOpenChange, onJoined }) => {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(7,7,10,0.65)", backdropFilter: "blur(8px)" }}
+      style={{ background: "var(--modal-backdrop)", backdropFilter: "blur(8px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
       data-testid="join-dialog"
     >
       <div
         className="w-full max-w-lg rounded-3xl overflow-hidden flex flex-col"
-        style={{ background: "rgba(15,15,22,0.92)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)", maxHeight: "82vh" }}
+        style={{ background: "var(--modal-bg)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 24px 64px -16px rgba(59,158,255,0.35)", maxHeight: "82vh" }}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2">

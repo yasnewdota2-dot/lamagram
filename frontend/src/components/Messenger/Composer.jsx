@@ -229,7 +229,7 @@ export const Composer = ({ conversationId, onUploadError }) => {
             fallback={
               <div
                 className="rounded-2xl px-4 py-3 text-xs text-white/60"
-                style={{ width: 320, background: "rgba(11,11,18,0.85)", border: "1px solid rgba(255,255,255,0.1)" }}
+                style={{ width: 320, background: "var(--modal-bg)", border: "1px solid rgba(255,255,255,0.1)" }}
               >
                 {t("loading")}
               </div>
