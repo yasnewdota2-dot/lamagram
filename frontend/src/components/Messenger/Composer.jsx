@@ -1,9 +1,16 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil, MapPin } from "lucide-react";
+import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil, MapPin, Image as ImageIcon, File as FileIcon, BarChart3 } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useComposerStateForConv } from "../../lib/messenger";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { detectKind } from "../../lib/format";
+import { PollCreateDialog } from "./PollCreateDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 const EmojiPickerLazy = lazy(() =>
   import("emoji-picker-react").then((m) => ({ default: m.default }))
@@ -30,6 +37,30 @@ export const Composer = ({ conversationId, onUploadError }) => {
   const sendLockRef = useRef(false);
   const taRef = useRef(null);
   const fileRef = useRef(null);
+  const imageRef = useRef(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+
+  const triggerLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      if (window.sonnerToast) window.sonnerToast.error(t("cannotGetLocation"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await sendLocation(conversationId, pos.coords.latitude, pos.coords.longitude);
+        } catch (e) {
+          if (onUploadError) onUploadError(e?.response?.data?.detail || t("cannotGetLocation"));
+        }
+      },
+      (err) => {
+        const msg = err && err.code === 1 ? t("locationPermissionDenied") : t("cannotGetLocation");
+        if (onUploadError) onUploadError(msg);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }, [conversationId, onUploadError, sendLocation, t]);
 
   useEffect(() => {
     setText("");
@@ -253,21 +284,68 @@ export const Composer = ({ conversationId, onUploadError }) => {
         className="flex items-end gap-1 rounded-2xl p-1.5"
         style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}
       >
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          aria-label="attach"
-          data-testid="composer-attach-button"
-        >
-          <Paperclip className="w-5 h-5" />
-        </button>
+        <DropdownMenu open={attachOpen} onOpenChange={setAttachOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="attach"
+              data-testid="composer-attach-button"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            side="top"
+            sideOffset={8}
+            className="min-w-[200px]"
+            data-testid="composer-attach-menu"
+          >
+            <DropdownMenuItem
+              onClick={() => { setAttachOpen(false); imageRef.current?.click(); }}
+              data-testid="composer-attach-photo"
+            >
+              <ImageIcon className="w-4 h-4 me-2" />
+              {t("attach.photo") || "Photo / Video"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => { setAttachOpen(false); fileRef.current?.click(); }}
+              data-testid="composer-attach-file"
+            >
+              <FileIcon className="w-4 h-4 me-2" />
+              {t("attach.file") || "File"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => { setAttachOpen(false); setPollOpen(true); }}
+              data-testid="composer-attach-poll"
+            >
+              <BarChart3 className="w-4 h-4 me-2" />
+              {t("attach.poll") || "Poll"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => { setAttachOpen(false); triggerLocation(); }}
+              data-testid="composer-attach-location"
+            >
+              <MapPin className="w-4 h-4 me-2" />
+              {t("attach.location") || "Location"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <input
           ref={fileRef}
           type="file"
           className="hidden"
           onChange={onFileInput}
           data-testid="composer-file-input"
+        />
+        <input
+          ref={imageRef}
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={onFileInput}
+          data-testid="composer-image-input"
         />
         <button
           type="button"
@@ -277,35 +355,6 @@ export const Composer = ({ conversationId, onUploadError }) => {
           data-testid="composer-emoji-button"
         >
           <Smile className="w-5 h-5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (!navigator.geolocation) {
-              if (window.sonnerToast) window.sonnerToast.error(t("cannotGetLocation"));
-              return;
-            }
-            navigator.geolocation.getCurrentPosition(
-              async (pos) => {
-                try {
-                  await sendLocation(conversationId, pos.coords.latitude, pos.coords.longitude);
-                } catch (e) {
-                  if (onUploadError) onUploadError(e?.response?.data?.detail || t("cannotGetLocation"));
-                }
-              },
-              (err) => {
-                const msg = err && err.code === 1 ? t("locationPermissionDenied") : t("cannotGetLocation");
-                if (onUploadError) onUploadError(msg);
-              },
-              { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
-          }}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          aria-label={t("sendLocation")}
-          title={t("sendLocation")}
-          data-testid="composer-location-button"
-        >
-          <MapPin className="w-5 h-5" />
         </button>
         <textarea
           ref={taRef}
@@ -342,6 +391,11 @@ export const Composer = ({ conversationId, onUploadError }) => {
           </button>
         )}
       </div>
+      <PollCreateDialog
+        open={pollOpen}
+        onOpenChange={setPollOpen}
+        conversationId={conversationId}
+      />
     </div>
   );
 };

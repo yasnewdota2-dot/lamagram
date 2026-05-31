@@ -716,6 +716,20 @@ export const MessengerProvider = ({ children }) => {
     const { data } = await api.get("/discover", { params: { q, limit } });
     return data;
   }, []);
+
+  // ---------- Phase 24C — Polls ----------
+  const createPoll = useCallback(async (convId, payload) => {
+    const { data } = await api.post(`/conversations/${convId}/messages/poll`, payload);
+    return data;
+  }, []);
+  const votePoll = useCallback(async (messageId, optionIds) => {
+    const { data } = await api.post(`/messages/${messageId}/vote`, { option_ids: optionIds });
+    return data;
+  }, []);
+  const closePoll = useCallback(async (messageId) => {
+    const { data } = await api.post(`/messages/${messageId}/poll/close`);
+    return data;
+  }, []);
   const starMessage = useCallback(async (messageId, convId) => {
     await api.post(`/messages/${messageId}/star`);
     if (convId) {
@@ -868,6 +882,30 @@ export const MessengerProvider = ({ children }) => {
       if (conversation_id === activeId && message.sender_id !== meId) {
         markRead(conversation_id);
       }
+      return;
+    }
+
+    if (data.type === "poll_vote_update" || data.type === "poll_close") {
+      const { message_id, conversation_id, poll } = data;
+      const closed = data.type === "poll_close" ? true : undefined;
+      store.set((s) => {
+        const list = s.messagesByConv[conversation_id];
+        if (!list) return s;
+        let changed = false;
+        const next = list.map((m) => {
+          if (m.id !== message_id) return m;
+          changed = true;
+          return {
+            ...m,
+            poll: closed ? { ...poll, closed: true } : poll,
+          };
+        });
+        if (!changed) return s;
+        return {
+          ...s,
+          messagesByConv: { ...s.messagesByConv, [conversation_id]: next },
+        };
+      });
       return;
     }
 
@@ -1226,6 +1264,9 @@ export const MessengerProvider = ({ children }) => {
       unbanMember,
       transferOwnership,
       sendLocation,
+      createPoll,
+      votePoll,
+      closePoll,
     }),
     [
       sendMessage,
@@ -1285,6 +1326,9 @@ export const MessengerProvider = ({ children }) => {
       unbanMember,
       transferOwnership,
       sendLocation,
+      createPoll,
+      votePoll,
+      closePoll,
     ]
   );
 

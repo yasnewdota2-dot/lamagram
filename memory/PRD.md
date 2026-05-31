@@ -244,3 +244,11 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - Pre/post-vote logic clears the viewer's existing votes across all options, then sets new ones (re-vote semantics).
 - WS events: `message_new` (poll creation, per-viewer payload), `poll_vote_update` (every vote change, per-viewer), `poll_close` (creator/admin only, per-viewer).
 - Permission: channel polls only by admins; close only by sender_id OR conv admins/owner.
+
+## Phase 24C — Poll UI + Paperclip Menu (2026-05-31)
+- New `PollCreateDialog.jsx`: question (300ch), 2–10 options with X-remove (>2), client-side dupe check, Anonymous/Multiple toggles. Submit calls `createPoll`; backend 4xx surfaces as toast.
+- New `PollMessage.jsx`: Telegram-style bubble with header (POLL / ANONYMOUS POLL / FINAL RESULTS), question, options with progress bars (CSS width transition 350ms), single-mode instant vote or multi-mode pending+Vote button, voter count, View results dialog (creator/admin or non-anon), long-press menu (Reply / Forward / Close poll / Delete).
+- `Composer.jsx`: paperclip button became attachment DropdownMenu with 4 items — Photo/Video, File, Poll, Location. Standalone Location button removed (moved into menu).
+- `messenger.jsx`: added `createPoll/votePoll/closePoll` actions and WS handlers for `poll_vote_update` + `poll_close` (patch `messagesByConv` in place).
+- i18n: ~25 new keys EN+FA (attach.*, poll.*, poll.create.*, createPollError).
+- Verified: paperclip menu 4 items @ 414px mobile viewport; PollCreateDialog 3-option submit creates message; Anonymous poll header gets lock icon; WS sync curl-confirmed (Bob votes → Alice sees count=1 + voted=False while Bob sees voted=True — per-viewer payload working).

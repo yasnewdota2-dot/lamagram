@@ -15,6 +15,7 @@ import { OnlineDot } from "./OnlineDot";
 import { TypingDots } from "./TypingDots";
 import { MessageBubble } from "./MessageBubble";
 import { SystemPinMessage } from "./SystemPinMessage";
+import { PollMessage } from "./PollMessage";
 import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
 import { ForwardDialog } from "./ForwardDialog";
@@ -598,6 +599,16 @@ export const ChatPanel = ({ conversation }) => {
                       onReply={handleReply}
                       onDelete={handleDelete}
                       testId={`message-${m.id}`}
+                    />
+                  ) : m.type === "poll" ? (
+                    <PollMessage
+                      message={m}
+                      mine={mine}
+                      conversation={conversation}
+                      groupMembers={groupMembers}
+                      onReply={handleReply}
+                      onForward={handleForward}
+                      onDelete={handleDelete}
                     />
                   ) : (
                   <MessageBubble
