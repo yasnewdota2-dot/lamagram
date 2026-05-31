@@ -192,7 +192,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
     searchUsers,
     listMembers, listBanned, banMember, unbanMember, transferOwnership,
     updateAdminRole,
-    togglePinMute,
+    setMuted,
   } = useMessengerActions();
   const [members, setMembers] = useState([]);
   const [memberQ, setMemberQ] = useState("");
@@ -464,7 +464,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
                   </span>
                 )}
                 {isAdmin && !isMe && !isMemberOwner && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1">
                     {m.is_admin ? (
                       <button onClick={() => handleDemote(m.id)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" data-testid={`group-info-demote-${m.username}`}>{t("demote")}</button>
                     ) : (
@@ -561,7 +561,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
           {isAdmin && <InviteLinkSection conversation={conversation} endpoint="groups" />}
           {/* Phase 11 — mute toggle visible to ALL members */}
           <button
-            onClick={async () => { try { await togglePinMute(convId, "mute", !conversation.is_muted); } catch {} }}
+            onClick={async () => { try { await setMuted(convId, !conversation.is_muted); } catch {} }}
             className="w-full flex items-center justify-between px-3 py-2 rounded-xl"
             style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}
             data-testid="group-info-mute-toggle"

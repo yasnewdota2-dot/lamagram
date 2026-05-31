@@ -179,36 +179,36 @@ export const ChatPanel = ({ conversation }) => {
   );
   const handleJumpToReply = React.useCallback(
     async (msgId) => {
-      const tryScroll = () => {
-        const el = scrollRef.current?.querySelector(`[data-testid^="message-"][data-msgid="${msgId}"]`);
-        if (!el) return false;
+      const findEl = () =>
+        scrollRef.current?.querySelector(`[data-msgid="${msgId}"]`) ||
+        document.querySelector(`[data-msgid="${msgId}"]`);
+      const scrollTo = (el) => {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.style.transition = "background 0.4s";
         el.style.background = "rgba(59,158,255,0.18)";
         setTimeout(() => { el.style.background = "transparent"; }, 900);
-        return true;
       };
-      if (tryScroll()) return;
-      // Phase 11 — older than the loaded window: page back until found.
-      if (!loadOlderMessages || !convId) {
-        setToast(t("messageNotInView"));
-        return;
-      }
+      let el = findEl();
+      if (el) { scrollTo(el); return; }
+      if (!loadOlderMessages || !convId) { setToast(t("messageNotInView")); return; }
+      const waitRender = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       try {
         for (let i = 0; i < 6; i += 1) {
           const oldest = (messages || [])[0];
           if (!oldest) break;
           const older = await loadOlderMessages(convId, oldest.id, 50);
+          await waitRender();
+          el = findEl();
+          if (el) { scrollTo(el); return; }
           if (!older || older.length === 0) break;
-          if (older.some((m) => m.id === msgId)) break;
         }
-        // Allow React + IntersectionObserver to paint, then retry the scroll.
-        setTimeout(() => { if (!tryScroll()) setToast(t("messageNotInView")); }, 250);
+        setToast(t("messageNotInView"));
       } catch {
         setToast(t("messageNotInView"));
       }
     },
-    [t, loadOlderMessages, convId, messages]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, convId, messages]
   );
 
   const isOnline = livePres ? livePres.is_online : !!other?.is_online;
@@ -378,9 +378,11 @@ export const ChatPanel = ({ conversation }) => {
             data-testid={!isGroup && !isChannel && other ? "chat-header-avatar-trigger" : undefined}
           >
             <UserAvatar user={other} size={42} testId="chat-header-avatar" />
-            <span className="absolute -bottom-0.5 right-0">
-              <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
-            </span>
+            {!isChannel && !isGroup && (
+              <span className="absolute -bottom-0.5 right-0">
+                <OnlineDot online={isOnline} size={11} testId="chat-header-online-dot" />
+              </span>
+            )}
           </div>
         )}
         {isMobile && (

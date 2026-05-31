@@ -143,7 +143,7 @@ const ChatRow = memo(
           ) : (
             <>
               <UserAvatar user={other} size={44} />
-              {other?.is_online && (
+              {other?.is_online && c.kind === "dm" && (
                 <span className="absolute -bottom-0.5 right-0">
                   <OnlineDot online size={11} />
                 </span>

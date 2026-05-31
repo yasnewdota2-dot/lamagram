@@ -234,8 +234,13 @@ const MessageBubbleImpl = ({
       )}
       <div
         {...lp}
-        onClick={selectionMode ? (e) => { e.stopPropagation(); onToggleSelect?.(message); } : undefined}
-        className={`relative max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} ${selectionMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (lp.didFire?.()) return;
+          if (selectionMode) { onToggleSelect?.(message); return; }
+          setMenuOpen(true);
+        }}
+        className={`relative max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} cursor-pointer ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
         data-testid={isSelected ? `message-selected-${message.id}` : undefined}
         style={
           emojiOnly
@@ -336,13 +341,13 @@ const MessageBubbleImpl = ({
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button
-              className={`absolute top-1 ${mine ? "left-0 -translate-x-full" : "right-0 translate-x-full"} opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity p-1 rounded-md`}
-              style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)" }}
+              className={`absolute top-1 ${mine ? "left-0 -translate-x-full" : "right-0 translate-x-full"} opacity-0 pointer-events-none p-0 w-0 h-0`}
               data-testid={`message-actions-trigger-${message.id}`}
-              aria-label={t("actions")}
+              aria-hidden="true"
+              tabIndex={-1}
               onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
             >
-              <MoreHorizontal className="w-3.5 h-3.5 text-white/85" />
+              <MoreHorizontal className="w-0 h-0" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
