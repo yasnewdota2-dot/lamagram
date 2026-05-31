@@ -419,6 +419,7 @@ def public_message(m: dict) -> dict:
         "starred_by": m.get("starred_by") or [],
         "reactions": m.get("reactions") or [],
         "pinned_in_conv": bool(m.get("pinned_in_conv")),
+        "pinned_by_user_id": m.get("pinned_by_user_id"),
         "view_count": int(m.get("view_count") or 0),
     }
 
@@ -2522,7 +2523,7 @@ async def unpin_message(message_id: str, current_user: dict = Depends(get_curren
         raise HTTPException(403, "Only admins can unpin in this conversation")
     pinned = [pid for pid in (conv.get("pinned_message_ids") or []) if pid != message_id]
     await db.conversations.update_one({"_id": conv_id}, {"$set": {"pinned_message_ids": pinned}})
-    await db.messages.update_one({"_id": message_id}, {"$set": {"pinned_in_conv": False}})
+    await db.messages.update_one({"_id": message_id}, {"$set": {"pinned_in_conv": False, "pinned_by_user_id": None}})
     payload = {
         "type": "message_unpinned",
         "conversation_id": conv_id,

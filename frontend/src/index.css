@@ -827,3 +827,9 @@ button:not(:disabled):active,
     filter: brightness(1.10);
   }
 }
+
+/* Phase 22 — touch-action manipulation removes iOS 300ms tap delay */
+button, [role="button"], a, [data-testid^="chat-item-"], [data-testid$="-toggle"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}

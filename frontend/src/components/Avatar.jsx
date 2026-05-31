@@ -12,10 +12,13 @@ const UserAvatarImpl = ({ user, size = 40, ring = false, className = "", testId 
 
   const inner = (
     <div
-      className={`flex items-center justify-center rounded-full overflow-hidden text-white font-semibold ${className}`}
+      className={`shrink-0 flex items-center justify-center rounded-full overflow-hidden text-white font-semibold ${className}`}
       style={{
         width: size,
         height: size,
+        minWidth: size,
+        minHeight: size,
+        flex: `0 0 ${size}px`,
         background: "linear-gradient(135deg,#1a2240,#3b2a5b)",
         fontSize: size * 0.38,
       }}
