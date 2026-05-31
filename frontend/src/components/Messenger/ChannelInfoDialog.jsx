@@ -6,6 +6,7 @@ import { useMessengerActions } from "../../lib/messenger";
 import { GroupAvatar } from "./GroupAvatar";
 import { UserAvatar } from "../Avatar";
 import { InviteLinkSection, PublicHandleSection } from "./InfoSections";
+import { EditRoleModal } from "./GroupDialogs";
 
 export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
   const { t } = useI18n();
@@ -15,6 +16,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
     promoteChannelAdmin, demoteChannelAdmin,
     listMembers, listBanned, banMember, unbanMember, transferOwnership,
     setMuted,
+    updateAdminRole,
   } = useMessengerActions();
 
   const [members, setMembers] = useState([]);
@@ -22,6 +24,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
   const [banned, setBanned] = useState([]);
   const [bannedOpen, setBannedOpen] = useState(false);
   const [confirmAct, setConfirmAct] = useState(null);
+  const [editRoleFor, setEditRoleFor] = useState(null);
   const [error, setError] = useState("");
   const memDebTmr = useRef(null);
 
@@ -142,6 +145,11 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
                       ) : (
                         <button onClick={() => handlePromote(m.id)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" data-testid={`channel-info-promote-${m.username}`}>{t("promote")}</button>
                       )}
+                      {m.is_admin && (
+                        <button onClick={() => setEditRoleFor(m)} className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10" data-testid={`channel-info-edit-role-${m.username}`} title={t("editRole")}>
+                          {t("editRole")}
+                        </button>
+                      )}
                       {isOwner && m.is_admin && (
                         <button onClick={() => setConfirmAct({ type: "transfer", target: m })} className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-300" data-testid={`channel-info-transfer-${m.username}`} title={t("transferOwnership")}>
                           <Crown className="inline w-3 h-3" />
@@ -216,6 +224,22 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
               </div>
             </div>
           </div>
+        )}
+        {editRoleFor && (
+          <EditRoleModal
+            member={editRoleFor}
+            kind="channel"
+            onClose={() => setEditRoleFor(null)}
+            onSave={async ({ title, permissions }) => {
+              try {
+                await updateAdminRole(convId, "channel", editRoleFor.id, { title, permissions });
+                setMembers((prev) => prev.map((m) =>
+                  m.id === editRoleFor.id ? { ...m, admin_title: (title || "").trim() || undefined, admin_permissions: permissions } : m
+                ));
+                setEditRoleFor(null);
+              } catch (e) { setError(e?.response?.data?.detail || e.message); }
+            }}
+          />
         )}
       </div>
     </div>

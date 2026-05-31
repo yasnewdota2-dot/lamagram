@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowDown, Upload, MessageSquareText, Star, MessageSquare, Search as SearchIcon, ArrowLeft, Forward as ForwardIcon, Trash2, Copy as CopyIcon, X } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
@@ -533,6 +533,7 @@ export const ChatPanel = ({ conversation }) => {
           ref={scrollRef}
           onScroll={onScroll}
           className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
+          style={{ opacity: scrollReady ? 1 : 0, transition: "opacity 90ms ease-out" }}
           data-testid="messages-scroll"
         >
         {messages.length === 0 ? (
