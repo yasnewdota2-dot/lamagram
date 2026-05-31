@@ -81,8 +81,9 @@ export const SystemPinMessage = ({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, scale: 0.95, y: 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.34, 1.56, 0.64, 1] }}
       className="flex w-full justify-center px-3 py-1"
       data-testid={testId || `message-${message.id}`}
     >

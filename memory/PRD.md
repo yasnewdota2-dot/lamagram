@@ -252,3 +252,14 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - `messenger.jsx`: added `createPoll/votePoll/closePoll` actions and WS handlers for `poll_vote_update` + `poll_close` (patch `messagesByConv` in place).
 - i18n: ~25 new keys EN+FA (attach.*, poll.*, poll.create.*, createPollError).
 - Verified: paperclip menu 4 items @ 414px mobile viewport; PollCreateDialog 3-option submit creates message; Anonymous poll header gets lock icon; WS sync curl-confirmed (Bob votes → Alice sees count=1 + voted=False while Bob sees voted=True — per-viewer payload working).
+
+## Phase 24D — Smoothness Pass (2026-05-31)
+- Global Radix Dialog / DropdownMenu open animation overridden in `index.css` to spring-ish overshoot: 280ms `cubic-bezier(0.34, 1.56, 0.64, 1)` for open; 180ms ease-out for close; overlay fade 150ms. Affects Group/Channel Info, PollCreateDialog, Forward, NewGroup/Channel, ProfileEditor, attachment menu, all message context menus.
+- `.gm-press` helper class added — `transform: scale(0.98)` on `:active` + `brightness(1.08)` on hover (hover-capable devices only). Applied to chat-list items, paperclip / emoji / send / voice buttons.
+- Paperclip icon rotates 15° via `data-[state=open]` Tailwind selector when the menu opens.
+- Send ↔ Voice button now cross-fades via `AnimatePresence mode="wait"` with spring (opacity + scale 0.7→1, 180ms).
+- Poll progress-bar transition widened: 350ms → **500ms `cubic-bezier(0.4, 0, 0.2, 1)`** + `will-change: width` (verified live via getComputedStyle).
+- Vote count `%` gets a `gmVotePulse` keyframe (1 → 1.18 → 1, 360ms) any time the option's `vote_count` changes (re-mount via `key={opt.vote_count}`).
+- SystemPin pill entrance upgraded: now `opacity 0 → 1` + `scale 0.95 → 1` (200ms, same overshoot easing).
+- `* { -webkit-tap-highlight-color: transparent }` extended globally (was scoped to `button/[role=button]/a`).
+- Verified: progress-bar inline style is `width 500ms cubic-bezier(0.4, 0, 0.2, 1)`, paperclip rotates on open, GroupInfo dialog springs, send/voice swap is smooth, no console errors, no regression on Poll create/vote/close, Pin system, DM/Group/Channel.

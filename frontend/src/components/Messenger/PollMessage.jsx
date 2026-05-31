@@ -199,7 +199,11 @@ export const PollMessage = ({
                         )}
                         <span className="truncate text-sm">{opt.text}</span>
                       </div>
-                      <span className="text-xs font-medium opacity-80 shrink-0" data-testid={`poll-option-pct-${opt.id}`}>
+                      <span
+                        key={opt.vote_count}
+                        className="text-xs font-medium opacity-80 shrink-0 gm-vote-pulse"
+                        data-testid={`poll-option-pct-${opt.id}`}
+                      >
                         {pct}%
                       </span>
                     </div>
@@ -213,7 +217,8 @@ export const PollMessage = ({
                         style={{
                           width: `${pct}%`,
                           background: "var(--accent, #3B9EFF)",
-                          transition: "width 350ms cubic-bezier(.2,.8,.2,1)",
+                          transition: "width 500ms cubic-bezier(0.4, 0, 0.2, 1)",
+                          willChange: "width",
                         }}
                         data-testid={`poll-option-bar-${opt.id}`}
                       />

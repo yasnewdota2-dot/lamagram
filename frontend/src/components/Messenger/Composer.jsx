@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { SendHorizonal, Paperclip, Smile, Mic, X, CornerUpLeft, Pencil, MapPin, Image as ImageIcon, File as FileIcon, BarChart3 } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useMessengerActions, useComposerStateForConv } from "../../lib/messenger";
@@ -288,7 +289,7 @@ export const Composer = ({ conversationId, onUploadError }) => {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 gm-press transition-all duration-200 data-[state=open]:rotate-[15deg] data-[state=open]:text-white"
               aria-label="attach"
               data-testid="composer-attach-button"
             >
@@ -350,7 +351,7 @@ export const Composer = ({ conversationId, onUploadError }) => {
         <button
           type="button"
           onClick={() => setShowEmoji((v) => !v)}
-          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="w-9 h-9 rounded-xl flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 gm-press transition-colors"
           aria-label="emoji"
           data-testid="composer-emoji-button"
         >
@@ -367,29 +368,41 @@ export const Composer = ({ conversationId, onUploadError }) => {
           style={{ unicodeBidi: "plaintext", direction: lang === "fa" ? "rtl" : "ltr", color: "var(--text-primary)" }}
           data-testid="composer-input"
         />
-        {text.trim() ? (
-          <button
-            onClick={submit}
-            disabled={sending}
-            className="gm-btn-primary"
-            style={{ padding: "10px 14px", borderRadius: 14 }}
-            aria-label="send"
-            data-testid="composer-send-button"
-          >
-            <SendHorizonal className="w-4 h-4" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setRecording(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-            style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)" }}
-            aria-label="record voice"
-            data-testid="composer-voice-button"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          {text.trim() ? (
+            <motion.button
+              key="send"
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.18, ease: [0.34, 1.56, 0.64, 1] }}
+              onClick={submit}
+              disabled={sending}
+              className="gm-btn-primary gm-press hover:scale-105 active:scale-95 transition-transform"
+              style={{ padding: "10px 14px", borderRadius: 14 }}
+              aria-label="send"
+              data-testid="composer-send-button"
+            >
+              <SendHorizonal className="w-4 h-4" />
+            </motion.button>
+          ) : (
+            <motion.button
+              key="mic"
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.18, ease: [0.34, 1.56, 0.64, 1] }}
+              type="button"
+              onClick={() => setRecording(true)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white gm-press hover:scale-105 active:scale-95"
+              style={{ background: "linear-gradient(135deg,#3B9EFF,#A78BFA)" }}
+              aria-label="record voice"
+              data-testid="composer-voice-button"
+            >
+              <Mic className="w-5 h-5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
       <PollCreateDialog
         open={pollOpen}

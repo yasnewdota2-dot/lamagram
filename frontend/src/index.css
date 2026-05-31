@@ -835,6 +835,67 @@ button, [role="button"], a, [data-testid^="chat-item-"], [data-testid$="-toggle"
 }
 
 /* =========================================================================
+   Phase 24D — Smoothness Pass
+   - Spring-ish entrance/exit for Radix Dialog + DropdownMenu (used by
+     Group/Channel Info, PollCreateDialog, Forward, attachment menu, etc).
+   - `.gm-press` helper: a subtle scale-down on touch for every tappable item.
+   - vote-count micro pulse for poll bumps.
+   ========================================================================= */
+
+/* Spring-y overshoot when opening; clean cubic when closing.
+   Targets Radix Dialog content + overlay AND Radix DropdownMenu content. */
+[data-radix-dialog-content][data-state="open"],
+[data-radix-popper-content-wrapper] > [data-state="open"],
+[role="dialog"][data-state="open"],
+[role="menu"][data-state="open"] {
+  animation-duration: 280ms !important;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+[data-radix-dialog-overlay][data-state="open"] {
+  animation-duration: 150ms !important;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+[data-radix-dialog-content][data-state="closed"],
+[data-radix-popper-content-wrapper] > [data-state="closed"],
+[role="dialog"][data-state="closed"],
+[role="menu"][data-state="closed"],
+[data-radix-dialog-overlay][data-state="closed"] {
+  animation-duration: 180ms !important;
+  animation-timing-function: cubic-bezier(0.4, 0, 1, 1) !important;
+}
+
+/* Universal tap feedback. Pair with any clickable element. */
+.gm-press {
+  transition: transform 100ms cubic-bezier(0.4, 0, 0.2, 1), filter 150ms ease;
+}
+.gm-press:active {
+  transform: scale(0.98);
+}
+@media (hover: hover) {
+  .gm-press:hover {
+    filter: brightness(1.08);
+  }
+}
+
+/* Tap highlight transparent across ALL interactive controls */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes gmVotePulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.gm-vote-pulse {
+  animation: gmVotePulse 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-block;
+  transform-origin: center;
+}
+
+
+
+/* =========================================================================
    Phase 23 — zoom lock + horizontal-scroll lock + dialog compaction.
    ========================================================================= */
 html, body {

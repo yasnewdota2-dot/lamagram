@@ -115,7 +115,7 @@ const ChatRow = memo(
         }}
         role="button"
         tabIndex={0}
-        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40 relative transition-colors hover:bg-[var(--bg-glass-strong)] select-none"
+        className="group cursor-pointer text-left flex items-center gap-3 px-3 py-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#3B9EFF]/40 relative transition-colors hover:bg-[var(--bg-glass-strong)] active:scale-[0.99] select-none"
         style={
           isSelected
             ? {
