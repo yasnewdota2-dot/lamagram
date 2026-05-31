@@ -243,14 +243,30 @@ export const ChatPanel = ({ conversation }) => {
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   };
 
-  // Phase 14 (fixed) — useLayoutEffect runs BEFORE paint so the conv opens
-  // already scrolled to the bottom (no top→bottom flash). No opacity gate.
+  // Phase 15 — robust pre-paint scroll-pin.
+  //   1. `useLayoutEffect` runs before the browser paints so the initial scroll
+  //      offset is the bottom — no top→bottom flash on conv switch.
+  //   2. We also re-run when `messages.length` flips from 0→N (the typical case
+  //      of an async fetch landing after the convId change).
+  //   3. The `ready` flag hides the container via `visibility: hidden` (NOT
+  //      display:none, so layout still computes) while we pin; an rAF and a
+  //      300ms safety timeout both flip it back, guaranteeing we never get
+  //      stuck invisible again.
+  const [ready, setReady] = useState(true);
   useLayoutEffect(() => {
-    scrollToBottom(false);
+    setReady(false);
+    const pin = () => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pin();
     prevLenRef.current = messages.length;
     setPendingNew(0);
+    const raf = requestAnimationFrame(() => { pin(); setReady(true); });
+    const safety = setTimeout(() => setReady(true), 300);
+    return () => { cancelAnimationFrame(raf); clearTimeout(safety); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convId]);
+  }, [convId, messages.length === 0 ? 0 : 1]);
 
   // Listen for global jump-to-message events (from sidebar global search)
   useEffect(() => {
@@ -535,6 +551,7 @@ export const ChatPanel = ({ conversation }) => {
           ref={scrollRef}
           onScroll={onScroll}
           className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
+          style={{ visibility: ready ? "visible" : "hidden" }}
           data-testid="messages-scroll"
         >
         {messages.length === 0 ? (
