@@ -243,7 +243,9 @@ export const ChatPanel = ({ conversation }) => {
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   };
 
-  useEffect(() => {
+  // Phase 14 (fixed) — useLayoutEffect runs BEFORE paint so the conv opens
+  // already scrolled to the bottom (no top→bottom flash). No opacity gate.
+  useLayoutEffect(() => {
     scrollToBottom(false);
     prevLenRef.current = messages.length;
     setPendingNew(0);
@@ -533,7 +535,6 @@ export const ChatPanel = ({ conversation }) => {
           ref={scrollRef}
           onScroll={onScroll}
           className="flex-1 overflow-y-auto px-3 sm:px-5 py-4"
-          style={{ opacity: scrollReady ? 1 : 0, transition: "opacity 90ms ease-out" }}
           data-testid="messages-scroll"
         >
         {messages.length === 0 ? (
