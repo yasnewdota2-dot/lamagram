@@ -130,12 +130,12 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
                     <div className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>@{m.username}</div>
                   </div>
                   {isMemberOwner ? (
-                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-md" style={{ background: "linear-gradient(135deg, #F59E0B, #FBBF24)", border: "1px solid rgba(245,158,11,0.5)", color: "#1a1305" }} data-testid={`channel-info-owner-badge-${m.username}`}>
-                      <Crown className="inline w-2.5 h-2.5 mr-0.5" />{t("owner")}
+                    <span className="inline-flex items-center gap-0.5 text-[9px] leading-none uppercase tracking-wider px-1.5 h-[18px] rounded-md shrink-0" style={{ background: "linear-gradient(135deg, #F59E0B, #FBBF24)", border: "1px solid rgba(245,158,11,0.5)", color: "#1a1305" }} data-testid={`channel-info-owner-badge-${m.username}`}>
+                      <Crown className="w-2.5 h-2.5" />{t("owner")}
                     </span>
                   ) : m.is_admin && (
-                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-md" style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#C9B8FF" }} data-testid={`channel-info-admin-badge-${m.username}`}>
-                      <Crown className="inline w-2.5 h-2.5 mr-0.5" />{t("adminLabel")}
+                    <span className="inline-flex items-center gap-0.5 text-[9px] leading-none uppercase tracking-wider px-1.5 h-[18px] rounded-md shrink-0" style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", color: "#C9B8FF" }} data-testid={`channel-info-admin-badge-${m.username}`}>
+                      <Crown className="w-2.5 h-2.5" />{t("adminLabel")}
                     </span>
                   )}
                   {isAdmin && !isMe && !isMemberOwner && (

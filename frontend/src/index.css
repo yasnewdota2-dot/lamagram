@@ -805,3 +805,25 @@ html, body, #root {
 #root > * {
   min-height: 100%;
 }
+
+/* =========================================================================
+   Phase 20 — global button polish (snappier press / hover feedback).
+   ========================================================================= */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+.gm-btn {
+  cursor: pointer;
+  transition: transform 150ms ease, opacity 150ms ease, filter 150ms ease, background-color 150ms ease;
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+.gm-btn:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+@media (hover: hover) {
+  button:not(:disabled):hover,
+  .gm-btn:hover {
+    filter: brightness(1.10);
+  }
+}
