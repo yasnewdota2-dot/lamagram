@@ -369,6 +369,41 @@ class CreateConversationRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
 
+
+class CreatePollRequest(BaseModel):
+    """Phase 24B — payload for POST /api/conversations/{id}/messages/poll."""
+    model_config = ConfigDict(extra="ignore")
+    question: str = Field(..., min_length=1, max_length=300)
+    options: List[str] = Field(..., min_length=2, max_length=10)
+    is_anonymous: bool = False
+    allows_multiple: bool = False
+
+    @field_validator("question")
+    @classmethod
+    def _qstrip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Poll question cannot be empty")
+        return v
+
+    @field_validator("options")
+    @classmethod
+    def _opts(cls, v: List[str]) -> List[str]:
+        cleaned = [s.strip() for s in v]
+        for s in cleaned:
+            if not s:
+                raise ValueError("Poll options cannot be empty")
+            if len(s) > 100:
+                raise ValueError("Poll option exceeds 100 chars")
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("Duplicate poll options not allowed")
+        return cleaned
+
+
+class VotePollRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    option_ids: List[str] = Field(..., min_length=1, max_length=10)
+
 EDIT_WINDOW_SECONDS = 48 * 60 * 60       # 48 hours
 DELETE_ALL_WINDOW_SECONDS = 24 * 60 * 60  # 24 hours
 MAX_PINNED_DMS_PER_USER = 5
@@ -422,7 +457,63 @@ def public_message(m: dict) -> dict:
         "pinned_by_user_id": m.get("pinned_by_user_id"),
         "view_count": int(m.get("view_count") or 0),
         "meta": m.get("meta") or None,
+        "poll": m.get("poll") or None,
     }
+
+
+def serialize_poll(msg: dict, viewer_id: str, conv: dict) -> dict:
+    """Phase 24B — viewer-aware poll payload.
+
+    Non-anonymous polls always include the raw `votes` user_id list per option.
+    Anonymous polls include `votes` ONLY for the poll creator OR conversation
+    admins/owner. Everyone else sees `vote_count` + a `voted` boolean (whether
+    THIS viewer has voted) plus their own `my_votes` selections.
+    """
+    poll = msg.get("poll") or {}
+    options = poll.get("options") or []
+    is_anon = bool(poll.get("is_anonymous"))
+    creator_id = msg.get("sender_id")
+    admins = set(conv.get("admins") or [])
+    owner_id = conv.get("owner_id")
+    can_see_voters = (
+        (not is_anon)
+        or viewer_id == creator_id
+        or viewer_id in admins
+        or viewer_id == owner_id
+    )
+    out_options = []
+    my_votes: list = []
+    for opt in options:
+        votes = list(opt.get("votes") or [])
+        item = {
+            "id": opt["id"],
+            "text": opt["text"],
+            "vote_count": len(votes),
+            "voted": viewer_id in votes,
+        }
+        if can_see_voters:
+            item["votes"] = votes
+        if viewer_id in votes:
+            my_votes.append(opt["id"])
+        out_options.append(item)
+    total_voters = len({uid for opt in options for uid in (opt.get("votes") or [])})
+    return {
+        "question": poll.get("question", ""),
+        "is_anonymous": is_anon,
+        "allows_multiple": bool(poll.get("allows_multiple")),
+        "closed": bool(poll.get("closed")),
+        "closed_at": poll.get("closed_at"),
+        "options": out_options,
+        "total_voters": total_voters,
+        "my_votes": my_votes,
+    }
+
+
+def public_message_for_viewer(m: dict, viewer_id: str, conv: dict) -> dict:
+    pm = public_message(m)
+    if m.get("type") == "poll" and m.get("poll"):
+        pm["poll"] = serialize_poll(m, viewer_id, conv or {})
+    return pm
 
 async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:
     src = await db.messages.find_one({"_id": reply_to_message_id})
@@ -780,7 +871,7 @@ async def get_messages(
     cursor = db.messages.find(query).sort("created_at", -1).limit(limit)
     docs = await cursor.to_list(limit)
     docs.reverse()
-    return [public_message(m) for m in docs]
+    return [public_message_for_viewer(m, me_id, conv) for m in docs]
 
 @api_router.post("/conversations/{conv_id}/messages")
 async def post_message(conv_id: str, body: SendMessageRequest, current_user: dict = Depends(get_current_user)):
@@ -864,6 +955,171 @@ async def post_message(conv_id: str, body: SendMessageRequest, current_user: dic
         await manager.send_to_user(current_user["_id"], status_payload)
         await manager.send_to_user(other_id, status_payload)
     return pm
+
+# ---------- Phase 24B — Polls ----------
+
+@api_router.post("/conversations/{conv_id}/messages/poll")
+async def create_poll(
+    conv_id: str,
+    body: CreatePollRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    conv = await db.conversations.find_one({"_id": conv_id})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    if current_user["_id"] not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    if conv.get("kind") == "channel" and current_user["_id"] not in (conv.get("admins") or []):
+        raise HTTPException(403, "Only admins can post in channels")
+    now = datetime.now(timezone.utc).isoformat()
+    options = [
+        {"id": str(uuid.uuid4()), "text": txt, "votes": []}
+        for txt in body.options
+    ]
+    poll = {
+        "question": body.question,
+        "options": options,
+        "is_anonymous": bool(body.is_anonymous),
+        "allows_multiple": bool(body.allows_multiple),
+        "closed": False,
+        "closed_at": None,
+    }
+    initial_status = "seen" if conv.get("kind") == "saved" else "sent"
+    msg = {
+        "_id": str(uuid.uuid4()),
+        "conversation_id": conv_id,
+        "sender_id": current_user["_id"],
+        "type": "poll",
+        "text": "",
+        "poll": poll,
+        "status": initial_status,
+        "created_at": now,
+        "seen_at": now if conv.get("kind") == "saved" else None,
+        "delivered_at": None,
+        "deleted": False,
+        "reply_to": None,
+        "forwarded_from": None,
+        "edited": False,
+        "edited_at": None,
+        "deleted_for": [],
+        "deleted_for_everyone": False,
+    }
+    await db.messages.insert_one(msg)
+    last = {
+        "text": f"📊 {body.question}",
+        "sender_id": current_user["_id"],
+        "created_at": now,
+        "type": "poll",
+    }
+    await db.conversations.update_one(
+        {"_id": conv_id},
+        {"$set": {"last_message": last, "last_message_at": now}},
+    )
+    # Broadcast per-viewer so anonymity is respected
+    for pid in conv["participants"]:
+        payload = {
+            "type": "message_new",
+            "message": public_message_for_viewer(msg, pid, conv),
+            "conversation_id": conv_id,
+        }
+        await manager.send_to_user(pid, payload)
+    return public_message_for_viewer(msg, current_user["_id"], conv)
+
+
+@api_router.post("/messages/{message_id}/vote")
+async def vote_poll(
+    message_id: str,
+    body: VotePollRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    if msg.get("type") != "poll" or not msg.get("poll"):
+        raise HTTPException(400, "Message is not a poll")
+    poll = msg["poll"]
+    if poll.get("closed"):
+        raise HTTPException(400, "Poll is closed")
+    conv = await db.conversations.find_one({"_id": msg["conversation_id"]})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    me_id = current_user["_id"]
+    if me_id not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    option_ids = list(dict.fromkeys(body.option_ids))  # dedupe preserving order
+    if not poll.get("allows_multiple") and len(option_ids) != 1:
+        raise HTTPException(400, "Poll allows a single option only")
+    valid_ids = {o["id"] for o in poll.get("options") or []}
+    for oid in option_ids:
+        if oid not in valid_ids:
+            raise HTTPException(400, f"Unknown option_id: {oid}")
+    # Clear previous votes by this user across all options, then set new ones.
+    new_options = []
+    for opt in poll.get("options") or []:
+        votes = [uid for uid in (opt.get("votes") or []) if uid != me_id]
+        if opt["id"] in option_ids:
+            votes.append(me_id)
+        new_options.append({**opt, "votes": votes})
+    await db.messages.update_one(
+        {"_id": message_id},
+        {"$set": {"poll.options": new_options}},
+    )
+    msg["poll"]["options"] = new_options
+    # Broadcast per-viewer
+    for pid in conv["participants"]:
+        payload = {
+            "type": "poll_vote_update",
+            "message_id": message_id,
+            "conversation_id": msg["conversation_id"],
+            "poll": serialize_poll(msg, pid, conv),
+        }
+        await manager.send_to_user(pid, payload)
+    return public_message_for_viewer(msg, me_id, conv)
+
+
+@api_router.post("/messages/{message_id}/poll/close")
+async def close_poll(
+    message_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    msg = await db.messages.find_one({"_id": message_id})
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    if msg.get("type") != "poll" or not msg.get("poll"):
+        raise HTTPException(400, "Message is not a poll")
+    conv = await db.conversations.find_one({"_id": msg["conversation_id"]})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    me_id = current_user["_id"]
+    if me_id not in conv["participants"]:
+        raise HTTPException(403, "Not a participant")
+    is_creator = msg.get("sender_id") == me_id
+    is_admin = me_id in (conv.get("admins") or []) or me_id == conv.get("owner_id")
+    if not (is_creator or is_admin):
+        raise HTTPException(403, "Only the poll creator or an admin can close this poll")
+    if msg["poll"].get("closed"):
+        return public_message_for_viewer(msg, me_id, conv)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.messages.update_one(
+        {"_id": message_id},
+        {"$set": {"poll.closed": True, "poll.closed_at": now}},
+    )
+    msg["poll"]["closed"] = True
+    msg["poll"]["closed_at"] = now
+    for pid in conv["participants"]:
+        payload = {
+            "type": "poll_close",
+            "message_id": message_id,
+            "conversation_id": msg["conversation_id"],
+            "poll": serialize_poll(msg, pid, conv),
+        }
+        await manager.send_to_user(pid, payload)
+    return public_message_for_viewer(msg, me_id, conv)
+
+
+# ---------- end Phase 24B ----------
+
+
 
 @api_router.post("/conversations/{conv_id}/read")
 async def mark_conversation_read(conv_id: str, current_user: dict = Depends(get_current_user)):

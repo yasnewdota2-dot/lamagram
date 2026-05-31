@@ -235,3 +235,12 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - New `SystemPinMessage` component: centered subtle pill (no bubble), tap = jump-to-pinned (reuses Phase 12 RAF + loadOlderMessages backfill), long-press = Reply + Delete menu (one-side / both-side <24h).
 - i18n: 6 new flat keys with {name} client-side placeholder — `system.pin.{dm|group|channel}` & `system.unpin.{dm|group|channel}` (EN + FA).
 - Verified end-to-end (iteration_12.json): 7/7 acceptance criteria pass; avatar measured 56×56; pills rendered EN+FA in DM/Group/Channel; tap-jump scrolls without "not in view" toast; long-press menu shows both Reply and Delete.
+
+## Phase 24B — Poll Backend (2026-05-31)
+- 3 new endpoints registered under `/api`: `POST /conversations/{id}/messages/poll`, `POST /messages/{id}/vote`, `POST /messages/{id}/poll/close` (openapi total paths 55→58).
+- `messages` schema extended with `type:"poll"` + `poll:{question, options[{id,text,votes[]}], is_anonymous, allows_multiple, closed, closed_at}`.
+- Validators: question 1–300, options 2–10, option text 1–100, dedup, non-empty.
+- `public_message` now includes raw `poll`; new `serialize_poll(msg, viewer_id, conv)` + `public_message_for_viewer(...)` redact `votes[]` for anonymous polls unless viewer is creator / conv admin / owner. Vote payload to each viewer adds `voted` (bool) and `my_votes` (id list).
+- Pre/post-vote logic clears the viewer's existing votes across all options, then sets new ones (re-vote semantics).
+- WS events: `message_new` (poll creation, per-viewer payload), `poll_vote_update` (every vote change, per-viewer), `poll_close` (creator/admin only, per-viewer).
+- Permission: channel polls only by admins; close only by sender_id OR conv admins/owner.
