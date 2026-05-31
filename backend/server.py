@@ -2496,6 +2496,27 @@ async def pin_message(message_id: str, current_user: dict = Depends(get_current_
         await db.messages.update_one({"_id": popped}, {"$set": {"pinned_in_conv": False}})
     fresh = await db.messages.find_one({"_id": message_id})
     pm = public_message(fresh)
+    # Phase 24A — emit a system_pin message so the pin shows up inline in
+    # the thread (tappable to jump to the original).
+    sys_msg = {
+        "_id": str(uuid.uuid4()),
+        "conversation_id": conv_id,
+        "sender_id": current_user["_id"],
+        "type": "system_pin",
+        "text": "",
+        "meta": {
+            "pinned_message_id": message_id,
+            "actor_id": current_user["_id"],
+            "conversation_kind": conv.get("kind") or "dm",
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "sent",
+        "starred_by": [],
+        "reactions": [],
+        "deleted": False,
+    }
+    await db.messages.insert_one(sys_msg)
+    sys_pm = public_message(sys_msg)
     payload = {
         "type": "message_pinned",
         "conversation_id": conv_id,
@@ -2503,8 +2524,10 @@ async def pin_message(message_id: str, current_user: dict = Depends(get_current_
         "popped_message_id": popped,
         "pinned_message_ids": pinned,
     }
+    sys_payload = {"type": "message_new", "conversation_id": conv_id, "message": sys_pm}
     for pid in conv.get("participants") or []:
         await manager.send_to_user(pid, payload)
+        await manager.send_to_user(pid, sys_payload)
     return pm
 
 
@@ -2530,8 +2553,29 @@ async def unpin_message(message_id: str, current_user: dict = Depends(get_curren
         "message_id": message_id,
         "pinned_message_ids": pinned,
     }
+    # Phase 24A — system_unpin in-thread marker
+    sys_msg = {
+        "_id": str(uuid.uuid4()),
+        "conversation_id": conv_id,
+        "sender_id": current_user["_id"],
+        "type": "system_unpin",
+        "text": "",
+        "meta": {
+            "pinned_message_id": message_id,
+            "actor_id": current_user["_id"],
+            "conversation_kind": conv.get("kind") or "dm",
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "sent",
+        "starred_by": [],
+        "reactions": [],
+        "deleted": False,
+    }
+    await db.messages.insert_one(sys_msg)
+    sys_payload = {"type": "message_new", "conversation_id": conv_id, "message": public_message(sys_msg)}
     for pid in conv.get("participants") or []:
         await manager.send_to_user(pid, payload)
+        await manager.send_to_user(pid, sys_payload)
     return {"ok": True, "pinned_message_ids": pinned}
 
 
