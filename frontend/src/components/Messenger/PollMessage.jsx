@@ -126,167 +126,173 @@ export const PollMessage = ({
       className={`flex flex-col ${bubbleSide} max-w-[420px] w-fit`}
       data-testid={`message-${message.id}`}
     >
-      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <div
-            {...lpHandlers}
-            onClick={(e) => {
-              if (didFire?.()) return;
-              // Only open context menu via long-press; tap on body does nothing (taps on options vote).
-              e.stopPropagation();
-            }}
-            className="rounded-2xl px-3.5 py-3 shadow-sm cursor-default select-none"
-            style={{ background: bubbleBg, color: bubbleText, minWidth: 280 }}
-            data-testid={`poll-bubble-${message.id}`}
-          >
-            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide opacity-70 mb-1.5">
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span data-testid="poll-header-label">{headerLabel}</span>
-              {isAnon && <Lock className="w-3 h-3 opacity-60" />}
-            </div>
-            <div className="font-medium text-[15px] leading-snug mb-2.5" data-testid="poll-question">
-              {poll.question}
-            </div>
-
-            <div className="space-y-1.5">
-              {options.map((opt) => {
-                const pct = totalVoters > 0 ? Math.round((opt.vote_count / totalVoters) * 100) : 0;
-                const selected = isMulti
-                  ? pendingMulti.includes(opt.id)
-                  : opt.voted;
-                const showCheck = opt.voted;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (didFire?.()) return;
-                      if (isMulti) toggleMulti(opt.id);
-                      else handleSingleTap(opt.id);
-                    }}
-                    disabled={isClosed || voting}
-                    className="relative w-full text-start rounded-xl px-3 py-2 transition-colors group"
-                    style={{
-                      background: "var(--poll-opt-bg, rgba(255,255,255,0.06))",
-                      border: `1px solid ${selected ? "var(--accent, #3B9EFF)" : "var(--border-glass, rgba(255,255,255,0.08))"}`,
-                      cursor: isClosed ? "default" : "pointer",
-                    }}
-                    data-testid={`poll-option-${opt.id}`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1.5 relative z-10">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {isMulti ? (
-                          <span
-                            className="w-4 h-4 rounded shrink-0 flex items-center justify-center"
-                            style={{
-                              border: `1.5px solid ${selected ? "var(--accent, #3B9EFF)" : "currentColor"}`,
-                              background: selected ? "var(--accent, #3B9EFF)" : "transparent",
-                              opacity: selected ? 1 : 0.5,
-                            }}
-                          >
-                            {selected && <Check className="w-3 h-3 text-white" />}
-                          </span>
-                        ) : (
-                          <span
-                            className="w-4 h-4 rounded-full shrink-0"
-                            style={{
-                              border: `1.5px solid ${showCheck ? "var(--accent, #3B9EFF)" : "currentColor"}`,
-                              background: showCheck ? "var(--accent, #3B9EFF)" : "transparent",
-                              opacity: showCheck ? 1 : 0.5,
-                            }}
-                          />
-                        )}
-                        <span className="truncate text-sm">{opt.text}</span>
-                      </div>
-                      <span
-                        key={opt.vote_count}
-                        className="text-xs font-medium opacity-80 shrink-0 gm-vote-pulse"
-                        data-testid={`poll-option-pct-${opt.id}`}
-                      >
-                        {pct}%
-                      </span>
-                    </div>
-                    {/* Progress bar */}
-                    <div
-                      className="h-1 rounded-full overflow-hidden relative z-10"
-                      style={{ background: "rgba(255,255,255,0.08)" }}
-                    >
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${pct}%`,
-                          background: "var(--accent, #3B9EFF)",
-                          transition: "width 500ms cubic-bezier(0.4, 0, 0.2, 1)",
-                          willChange: "width",
-                        }}
-                        data-testid={`poll-option-bar-${opt.id}`}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer: voters count + actions */}
-            <div className="flex items-center justify-between mt-2.5 pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-              <span className="text-xs opacity-70" data-testid="poll-voters-count">
-                {totalVoters === 0
-                  ? (t("poll.noVoters") || "No votes yet")
-                  : `${totalVoters} ${totalVoters === 1 ? (t("poll.voter") || "voter") : (t("poll.voters") || "voters")}`}
-              </span>
-              <div className="flex items-center gap-2">
-                {isMulti && multiDirty && !isClosed && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); submitMulti(); }}
-                    disabled={voting}
-                    className="text-xs px-2.5 py-1 rounded-full font-medium"
-                    style={{ background: "var(--accent, #3B9EFF)", color: "#fff" }}
-                    data-testid="poll-submit-vote"
-                  >
-                    {t("poll.vote") || "Vote"}
-                  </button>
-                )}
-                {canSeeVoters && hasVoted && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowResults(true); }}
-                    className="text-xs opacity-80 hover:opacity-100"
-                    data-testid="poll-view-results"
-                  >
-                    {t("poll.viewResults") || "View results"}
-                  </button>
-                )}
+      <div
+        className="rounded-2xl px-3.5 py-3 shadow-sm select-none"
+        style={{ background: bubbleBg, color: bubbleText, minWidth: 280 }}
+        data-testid={`poll-bubble-${message.id}`}
+      >
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <div
+              {...lpHandlers}
+              onClick={(e) => {
+                // Phase 25 Bug 5: short-tap on header must NOT open menu.
+                // Only long-press (via useLongPress) opens menu by setting state directly.
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              className="cursor-default"
+              data-testid={`poll-header-area-${message.id}`}
+            >
+              <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide opacity-70 mb-1.5">
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span data-testid="poll-header-label">{headerLabel}</span>
+                {isAnon && <Lock className="w-3 h-3 opacity-60" />}
+              </div>
+              <div className="font-medium text-[15px] leading-snug mb-2.5" data-testid="poll-question">
+                {poll.question}
               </div>
             </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={mine ? "end" : "start"} data-testid={`poll-menu-${message.id}`}>
+            <DropdownMenuItem onClick={() => { onReply?.(message); setMenuOpen(false); }} data-testid="poll-action-reply">
+              <Reply className="w-4 h-4 me-2" /> {t("reply") || "Reply"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { onForward?.(message); setMenuOpen(false); }} data-testid="poll-action-forward">
+              <Forward className="w-4 h-4 me-2" /> {t("forward") || "Forward"}
+            </DropdownMenuItem>
+            {canClose && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { handleClose(); setMenuOpen(false); }} data-testid="poll-action-close">
+                  <Lock className="w-4 h-4 me-2" /> {t("poll.close") || "Close poll"}
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => { onDelete?.(message, mine ? "all" : "me"); setMenuOpen(false); }}
+              className="text-red-400 focus:text-red-300"
+              data-testid="poll-action-delete"
+            >
+              <Trash2 className="w-4 h-4 me-2" /> {t("delete") || "Delete"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="space-y-1.5">
+          {options.map((opt) => {
+            const pct = totalVoters > 0 ? Math.round((opt.vote_count / totalVoters) * 100) : 0;
+            const selected = isMulti
+              ? pendingMulti.includes(opt.id)
+              : opt.voted;
+            const showCheck = opt.voted;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMulti) toggleMulti(opt.id);
+                  else handleSingleTap(opt.id);
+                }}
+                disabled={isClosed || voting}
+                className="relative w-full text-start rounded-xl px-3 py-2 transition-colors group"
+                style={{
+                  background: "var(--poll-opt-bg, rgba(255,255,255,0.06))",
+                  border: `1px solid ${selected ? "var(--accent, #3B9EFF)" : "var(--border-glass, rgba(255,255,255,0.08))"}`,
+                  cursor: isClosed ? "default" : "pointer",
+                }}
+                data-testid={`poll-option-${opt.id}`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5 relative z-10">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isMulti ? (
+                      <span
+                        className="w-4 h-4 rounded shrink-0 flex items-center justify-center"
+                        style={{
+                          border: `1.5px solid ${selected ? "var(--accent, #3B9EFF)" : "currentColor"}`,
+                          background: selected ? "var(--accent, #3B9EFF)" : "transparent",
+                          opacity: selected ? 1 : 0.5,
+                        }}
+                      >
+                        {selected && <Check className="w-3 h-3 text-white" />}
+                      </span>
+                    ) : (
+                      <span
+                        className="w-4 h-4 rounded-full shrink-0"
+                        style={{
+                          border: `1.5px solid ${showCheck ? "var(--accent, #3B9EFF)" : "currentColor"}`,
+                          background: showCheck ? "var(--accent, #3B9EFF)" : "transparent",
+                          opacity: showCheck ? 1 : 0.5,
+                        }}
+                      />
+                    )}
+                    <span className="truncate text-sm">{opt.text}</span>
+                  </div>
+                  <span
+                    key={opt.vote_count}
+                    className="text-xs font-medium opacity-80 shrink-0 gm-vote-pulse"
+                    data-testid={`poll-option-pct-${opt.id}`}
+                  >
+                    {pct}%
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div
+                  className="h-1 rounded-full overflow-hidden relative z-10"
+                  style={{ background: "rgba(255,255,255,0.08)" }}
+                >
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${pct}%`,
+                      background: "var(--accent, #3B9EFF)",
+                      transition: "width 500ms cubic-bezier(0.4, 0, 0.2, 1)",
+                      willChange: "width",
+                    }}
+                    data-testid={`poll-option-bar-${opt.id}`}
+                  />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer: voters count + actions */}
+        <div className="flex items-center justify-between mt-2.5 pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <span className="text-xs opacity-70" data-testid="poll-voters-count">
+            {totalVoters === 0
+              ? (t("poll.noVoters") || "No votes yet")
+              : `${totalVoters} ${totalVoters === 1 ? (t("poll.voter") || "voter") : (t("poll.voters") || "voters")}`}
+          </span>
+          <div className="flex items-center gap-2">
+            {isMulti && multiDirty && !isClosed && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); submitMulti(); }}
+                disabled={voting}
+                className="text-xs px-2.5 py-1 rounded-full font-medium"
+                style={{ background: "var(--accent, #3B9EFF)", color: "#fff" }}
+                data-testid="poll-submit-vote"
+              >
+                {t("poll.vote") || "Vote"}
+              </button>
+            )}
+            {canSeeVoters && hasVoted && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowResults(true); }}
+                className="text-xs opacity-80 hover:opacity-100"
+                data-testid="poll-view-results"
+              >
+                {t("poll.viewResults") || "View results"}
+              </button>
+            )}
           </div>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align={mine ? "end" : "start"} data-testid={`poll-menu-${message.id}`}>
-          <DropdownMenuItem onClick={() => { onReply?.(message); setMenuOpen(false); }} data-testid="poll-action-reply">
-            <Reply className="w-4 h-4 me-2" /> {t("reply") || "Reply"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => { onForward?.(message); setMenuOpen(false); }} data-testid="poll-action-forward">
-            <Forward className="w-4 h-4 me-2" /> {t("forward") || "Forward"}
-          </DropdownMenuItem>
-          {canClose && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { handleClose(); setMenuOpen(false); }} data-testid="poll-action-close">
-                <Lock className="w-4 h-4 me-2" /> {t("poll.close") || "Close poll"}
-              </DropdownMenuItem>
-            </>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => { onDelete?.(message, mine ? "all" : "me"); setMenuOpen(false); }}
-            className="text-red-400 focus:text-red-300"
-            data-testid="poll-action-delete"
-          >
-            <Trash2 className="w-4 h-4 me-2" /> {t("delete") || "Delete"}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </div>
+      </div>
 
       {/* View results dialog (non-anonymous OR creator/admin only) */}
       <Dialog open={showResults} onOpenChange={setShowResults}>

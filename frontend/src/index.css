@@ -369,6 +369,19 @@ body[dir="rtl"] .gm-field label { left: auto; right: 16px; }
   --modal-bg: rgba(255,255,255,0.98);
   --modal-bg-strong: #FFFFFF;
   --modal-backdrop: rgba(15,20,40,0.45);
+  /* Phase 25 — Tailwind theme tokens (Radix Dialog / AlertDialog / DropdownMenu / Popover all consume these). */
+  --background: 0 0% 100%;
+  --foreground: 240 14% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 14% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 14% 8%;
+  --secondary: 240 6% 94%;
+  --secondary-foreground: 240 14% 8%;
+  --muted: 240 6% 94%;
+  --muted-foreground: 240 6% 38%;
+  --border: 240 8% 88%;
+  --input: 240 8% 86%;
 }
 
 html, body { background: var(--bg-base) !important; color: var(--text-primary); transition: background-color 200ms ease; }

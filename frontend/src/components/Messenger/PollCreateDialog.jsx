@@ -106,6 +106,7 @@ export const PollCreateDialog = ({ open, onOpenChange, conversationId }) => {
               placeholder={t("poll.create.question_label") || "Ask something..."}
               rows={2}
               maxLength={MAX_Q}
+              dir="auto"
               data-testid="poll-create-question"
             />
             <div className="text-xs opacity-50 text-end mt-1">
@@ -125,6 +126,7 @@ export const PollCreateDialog = ({ open, onOpenChange, conversationId }) => {
                     onChange={(e) => setOpt(i, e.target.value.slice(0, MAX_OPT))}
                     placeholder={`${t("poll.create.options_label") || "Option"} ${i + 1}`}
                     maxLength={MAX_OPT}
+                    dir="auto"
                     data-testid={`poll-create-option-${i}`}
                   />
                   {options.length > MIN_OPTS && (

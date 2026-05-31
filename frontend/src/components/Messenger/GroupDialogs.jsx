@@ -319,10 +319,29 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
         dir={dir}
         data-testid="group-info-dialog"
       >
-        <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+        <div
+          className="sticky top-0 z-10 px-4 pt-3 pb-2 flex items-center justify-between"
+          style={{ background: "var(--modal-bg-strong, var(--modal-bg))", borderBottom: "1px solid var(--border-glass)" }}
+        >
+          <button
+            onClick={() => onOpenChange(false)}
+            className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+            style={{ color: "var(--text-primary)" }}
+            data-testid="group-info-close"
+            aria-label={t("close") || "Close"}
+          >
+            <X className="w-5 h-5" />
+          </button>
           <DialogTitle className="text-base font-semibold m-0">{t("groupInfo")}</DialogTitle>
-          <button onClick={() => onOpenChange(false)} className="p-1 rounded-md hover:bg-white/10" data-testid="group-info-close">
-            <X className="w-4 h-4 text-white/70" />
+          <button
+            onClick={handleLeave}
+            className="p-1.5 rounded-md hover:bg-red-500/10"
+            style={{ color: "var(--danger, #E5484D)" }}
+            data-testid="group-info-leave"
+            aria-label={t("leaveGroup")}
+            title={t("leaveGroup")}
+          >
+            <LogOut className="w-5 h-5" />
           </button>
         </div>
         <DialogDescription className="sr-only">{t("groupInfo")}</DialogDescription>
@@ -576,11 +595,6 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
           </button>
         </div>
 
-        <div className="px-5 py-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <button onClick={handleLeave} className="w-full px-3 py-2 rounded-lg text-sm font-medium text-red-300 hover:bg-red-500/10 flex items-center justify-center gap-2" data-testid="group-info-leave">
-            <LogOut className="w-4 h-4" /> {t("leaveGroup")}
-          </button>
-        </div>
         {editRoleFor && (
           <EditRoleModal
             member={editRoleFor}

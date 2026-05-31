@@ -263,3 +263,11 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - SystemPin pill entrance upgraded: now `opacity 0 → 1` + `scale 0.95 → 1` (200ms, same overshoot easing).
 - `* { -webkit-tap-highlight-color: transparent }` extended globally (was scoped to `button/[role=button]/a`).
 - Verified: progress-bar inline style is `width 500ms cubic-bezier(0.4, 0, 0.2, 1)`, paperclip rotates on open, GroupInfo dialog springs, send/voice swap is smooth, no console errors, no regression on Poll create/vote/close, Pin system, DM/Group/Channel.
+
+## Phase 25 — P0 Bug Fixes (2026-05-31)
+- **Bug 1 (Group/Channel Info header)**: Both dialogs now have a sticky 3-cell header — X close (left) · title (center) · LogOut leave icon (right, danger color). Bottom "Leave group/channel" buttons removed. Avatar already 56 px from P24A.
+- **Bug 2 (Delete dialog unreadable in light theme)**: Added Tailwind theme tokens (`--background`, `--foreground`, `--card`, `--popover`, `--popover-foreground`, `--secondary`, `--muted`, `--muted-foreground`, `--border`, `--input`) under `:root[data-theme="light"]`. Every Radix Dialog / AlertDialog / DropdownMenu / Popover now resolves to a readable white surface + near-black text in light mode.
+- **Bug 3 (Delete on system_pin / poll)**: Verified `DELETE /api/messages/{id}` is type-agnostic; `handleDelete` + `deleteMessage` chain works for any type. Was unblocked once Bug 2 made the confirm dialog visible.
+- **Bug 4 (Persian / Unicode in poll inputs)**: Backend `CreatePollRequest` only uses `min/max_length` (Unicode-safe). Poll Question textarea + each Option Input now carry `dir="auto"` so Persian input flips to RTL visually as you type. Channel `title` backend has no regex either; only handle is ASCII (by design).
+- **Bug 5 (Tap on poll opens menu)**: `DropdownMenuTrigger` now wraps ONLY the header area (📊 emoji + question). `onClick={(e) => e.preventDefault()}` cancels Radix's default open-on-tap; menu opens exclusively via `useLongPress` (500 ms) → controlled `setMenuOpen(true)`. Verified live: short-tap on option → menu count 0; long-press on header → menu count 1 (Reply / Forward / Close poll / Delete).
+- P1 bugs 6 (pin banner cycle), 7 (online dot polish), 8 (poll voter avatars) — **DEFERRED** to Phase 25b on user signal.

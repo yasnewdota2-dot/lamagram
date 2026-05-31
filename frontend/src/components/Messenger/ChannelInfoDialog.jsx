@@ -67,12 +67,30 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "var(--modal-backdrop)", backdropFilter: "blur(8px)" }} onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }} data-testid="channel-info-dialog">
       <div className="w-full max-w-md rounded-3xl overflow-hidden flex flex-col" style={{ background: "var(--bg-glass-strong)", border: "1px solid var(--border-glass)", maxHeight: "85vh" }}>
-        <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: "1px solid var(--border-glass)" }}>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-4 py-3 shrink-0 sticky top-0 z-10" style={{ background: "var(--modal-bg-strong, var(--modal-bg))", borderBottom: "1px solid var(--border-glass)" }}>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+            style={{ color: "var(--text-primary)" }}
+            data-testid="channel-info-close"
+            aria-label={t("close") || "Close"}
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2 min-w-0">
             <Megaphone className="w-4 h-4 text-[#9ABEFF]" />
-            <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>{g.title || "Channel"}</h3>
+            <h3 className="font-semibold truncate" style={{ color: "var(--text-primary)" }}>{g.title || "Channel"}</h3>
           </div>
-          <button onClick={() => onOpenChange(false)} className="p-1 rounded-md hover:bg-white/10" data-testid="channel-info-close"><X className="w-4 h-4" style={{ color: "var(--text-secondary)" }} /></button>
+          <button
+            onClick={onLeave}
+            className="p-1.5 rounded-md hover:bg-red-500/10"
+            style={{ color: "var(--danger, #E5484D)" }}
+            data-testid="channel-info-leave"
+            aria-label={t("leaveChannel")}
+            title={t("leaveChannel")}
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -193,11 +211,6 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
             </div>
           )}
 
-          <div className="px-5 pb-5">
-            <button onClick={onLeave} className="w-full px-3 py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/10 border border-red-400/20 flex items-center justify-center gap-2" data-testid="channel-leave">
-              <LogOut className="w-3.5 h-3.5" /> {t("leaveChannel")}
-            </button>
-          </div>
         </div>
 
         {confirmAct && (
