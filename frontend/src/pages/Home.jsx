@@ -157,7 +157,7 @@ export default function Home() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="p-2.5 rounded-xl shrink-0 text-white"
+                    className="h-10 w-10 flex items-center justify-center rounded-xl shrink-0 text-white"
                     style={{ background: "var(--accent-gradient)", boxShadow: "0 6px 18px -6px var(--accent-glow)" }}
                     aria-label={t("newChat")}
                     data-testid="sidebar-new-button"

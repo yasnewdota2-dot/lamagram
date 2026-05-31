@@ -107,13 +107,15 @@ body[dir="rtl"] {
   position: absolute;
   border-radius: 9999px;
   filter: blur(120px);
-  opacity: 0.55;
-  mix-blend-mode: screen;
+  opacity: 0.08;
+  mix-blend-mode: normal;
   animation: blobFloat 22s ease-in-out infinite;
 }
 .gm-blob-1 { width: 520px; height: 520px; background: #3B9EFF; top: -120px; left: -120px; }
 .gm-blob-2 { width: 460px; height: 460px; background: #A78BFA; bottom: -140px; right: -100px; animation-delay: -7s; }
-.gm-blob-3 { width: 360px; height: 360px; background: #22D3EE; top: 40%; left: 55%; opacity: 0.35; animation-delay: -14s; }
+.gm-blob-3 { width: 360px; height: 360px; background: #22D3EE; top: 40%; left: 55%; opacity: 0.05; animation-delay: -14s; }
+/* Phase 11 — dark mode must read as near-black, no blue/purple wash */
+:root[data-theme="dark"] .gm-bg-blobs { opacity: 0.35; }
 
 @keyframes blobFloat {
   0%, 100% { transform: translate(0,0) scale(1); }

@@ -146,6 +146,30 @@ export const MessengerProvider = ({ children }) => {
     return data;
   }, []);
 
+  // Phase 11 — Fetch older messages (paged backfill) and PREPEND into cache.
+  // Used by pinned-bar / reply-jump when the target is older than the
+  // currently-loaded window.
+  const loadOlderMessages = useCallback(async (convId, beforeMessageId, limit = 50) => {
+    if (!convId || !beforeMessageId) return [];
+    const { data } = await api.get(`/conversations/${convId}/messages`, {
+      params: { before: beforeMessageId, limit },
+    });
+    if (!Array.isArray(data) || data.length === 0) return [];
+    store.set((s) => {
+      const existing = s.messagesByConv[convId] || [];
+      const seen = new Set(existing.map((m) => m.id));
+      const newer = data.filter((m) => !seen.has(m.id));
+      if (newer.length === 0) return s;
+      // server returns ascending order — prepend then re-sort by created_at to
+      // be safe against minor drift.
+      const merged = [...newer, ...existing].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      );
+      return { ...s, messagesByConv: { ...s.messagesByConv, [convId]: merged } };
+    });
+    return data;
+  }, []);
+
   const sendMessage = useCallback(async (convId, text, opts = {}) => {
     const trimmed = (text || "").trim();
     if (!trimmed) return null;
@@ -1143,6 +1167,7 @@ export const MessengerProvider = ({ children }) => {
       ensureSavedConversation,
       fetchConversations,
       loadMessages,
+      loadOlderMessages,
       searchUsers,
       markRead,
       setActiveConv,
@@ -1199,6 +1224,7 @@ export const MessengerProvider = ({ children }) => {
       ensureSavedConversation,
       fetchConversations,
       loadMessages,
+      loadOlderMessages,
       searchUsers,
       markRead,
       setActiveConv,

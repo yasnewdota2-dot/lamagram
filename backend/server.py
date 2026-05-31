@@ -2311,7 +2311,11 @@ async def discover(q: str = "", limit: int = 20, current_user: dict = Depends(ge
         if qn in t: return 2
         return 3
     docs.sort(key=lambda c: (rank(c), -len(c.get("participants", []))))
-    out = [_discover_item(c) for c in docs if me_id not in c.get("participants", [])][:limit]
+    # Phase 11 — when the user provides a specific query, always show matching
+    # public chats even if the user is already a member (so they can find their
+    # own groups/channels via handle/title search). The "popular" empty-query
+    # path keeps the not-yet-joined filter to surface fresh discovery items.
+    out = [_discover_item(c) for c in docs][:limit]
     return out
 
 @api_router.get("/conversations/by-handle/{handle}")

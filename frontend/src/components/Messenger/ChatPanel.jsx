@@ -63,7 +63,7 @@ export const ChatPanel = ({ conversation }) => {
   const { t, lang } = useI18n();
   const { user } = useAuth();
   const { uploadMedia } = useMessengerActions();
-  const { setReplyTarget, setEditTarget, deleteMessage } = useMessengerActions();
+  const { setReplyTarget, setEditTarget, deleteMessage, loadOlderMessages } = useMessengerActions();
   const { setActiveConv, loadGroupMembers } = useMessengerActions();
   const isMobile = useIsMobile();
   const { openUserProfile } = useUserProfile();
@@ -178,18 +178,37 @@ export const ChatPanel = ({ conversation }) => {
     [convId, deleteMessage, t]
   );
   const handleJumpToReply = React.useCallback(
-    (msgId) => {
-      const el = scrollRef.current?.querySelector(`[data-testid^="message-"][data-msgid="${msgId}"]`);
-      if (!el) {
+    async (msgId) => {
+      const tryScroll = () => {
+        const el = scrollRef.current?.querySelector(`[data-testid^="message-"][data-msgid="${msgId}"]`);
+        if (!el) return false;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "background 0.4s";
+        el.style.background = "rgba(59,158,255,0.18)";
+        setTimeout(() => { el.style.background = "transparent"; }, 900);
+        return true;
+      };
+      if (tryScroll()) return;
+      // Phase 11 — older than the loaded window: page back until found.
+      if (!loadOlderMessages || !convId) {
         setToast(t("messageNotInView"));
         return;
       }
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.style.transition = "background 0.4s";
-      el.style.background = "rgba(59,158,255,0.18)";
-      setTimeout(() => { el.style.background = "transparent"; }, 900);
+      try {
+        for (let i = 0; i < 6; i += 1) {
+          const oldest = (messages || [])[0];
+          if (!oldest) break;
+          const older = await loadOlderMessages(convId, oldest.id, 50);
+          if (!older || older.length === 0) break;
+          if (older.some((m) => m.id === msgId)) break;
+        }
+        // Allow React + IntersectionObserver to paint, then retry the scroll.
+        setTimeout(() => { if (!tryScroll()) setToast(t("messageNotInView")); }, 250);
+      } catch {
+        setToast(t("messageNotInView"));
+      }
     },
-    [t]
+    [t, loadOlderMessages, convId, messages]
   );
 
   const isOnline = livePres ? livePres.is_online : !!other?.is_online;
@@ -401,9 +420,6 @@ export const ChatPanel = ({ conversation }) => {
                 <span data-testid="chat-header-subscribers">
                   {t("subscribersCount").replace("{n}", String(conversation.group?.member_count || conversation.participants?.length || 0))}
                 </span>
-                {conversation.is_public && conversation.handle && (
-                  <span className="text-white/40">· @{conversation.handle}</span>
-                )}
               </span>
             ) : isGroup ? (
               groupTypingLabel ? (

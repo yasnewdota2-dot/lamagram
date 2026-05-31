@@ -133,25 +133,32 @@ const MessageBubbleImpl = ({
   }, [conversation?.id, message.sender_id]);
 
   const handleMentionClick = async (seg) => {
+    if (seg.type === "conv") {
+      // /c/handle — always route through the preview drawer.
+      openPublicChat(seg.name);
+      return;
+    }
+    // @handle — try user first, fall back to public group/channel handle
+    // so users can paste group/channel handles in messages and have them
+    // resolve to the preview drawer instead of error-ing out.
     try {
-      if (seg.type === "user") {
-        const { data } = await api.get(`/users/by-username/${seg.name}`);
-        openUserProfile(data);
-      } else {
-        // Phase 9C: route /c/handle through preview drawer
-        openPublicChat(seg.name);
+      const { data } = await api.get(`/users/by-username/${seg.name}`);
+      openUserProfile(data);
+      return;
+    } catch (e) {
+      if (e?.response?.status !== 404) {
+        toast.error(e?.response?.data?.detail || e.message || "Failed");
         return;
       }
-    } catch (e) {
-      const status = e?.response?.status;
-      if (status === 404) {
-        const tpl = seg.type === "user" ? (t("userNotFound") || "User @{username} not found") : (t("channelNotFound") || "Channel @{handle} not found");
-        toast.error(tpl.replace(seg.type === "user" ? "{username}" : "{handle}", seg.name));
-      } else if (status === 403 && seg.type === "conv") {
-        // Private channel/group — try to join via openOrCreate by handle (no public flow yet)
-        toast.error(t("channelNotFound").replace("{handle}", seg.name));
+    }
+    try {
+      await api.get(`/conversations/by-handle/${seg.name}`);
+      openPublicChat(seg.name);
+    } catch (e2) {
+      if (e2?.response?.status === 404) {
+        toast.error((t("userNotFound") || "@{username} not found").replace("{username}", seg.name).replace("{handle}", seg.name));
       } else {
-        toast.error(e?.response?.data?.detail || e.message || "Failed");
+        toast.error(e2?.response?.data?.detail || e2.message || "Failed");
       }
     }
   };

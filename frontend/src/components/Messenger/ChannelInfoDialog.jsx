@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Megaphone, LogOut, Search, Crown, UserMinus, Ban } from "lucide-react";
+import { X, Megaphone, LogOut, Search, Crown, UserMinus, Ban, Bell, BellOff } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { useMessengerActions } from "../../lib/messenger";
@@ -14,6 +14,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
     removeChannelMember,
     promoteChannelAdmin, demoteChannelAdmin,
     listMembers, listBanned, banMember, unbanMember, transferOwnership,
+    togglePinMute,
   } = useMessengerActions();
 
   const [members, setMembers] = useState([]);
@@ -85,7 +86,22 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
               </div>
             </div>
             <PublicHandleSection conversation={conversation} endpoint="channels" />
-            <InviteLinkSection conversation={conversation} endpoint="channels" />
+            {isAdmin && <InviteLinkSection conversation={conversation} endpoint="channels" />}
+            {/* Phase 11 — mute toggle visible to ALL members */}
+            <button
+              onClick={async () => { try { await togglePinMute(convId, "mute", !conversation.is_muted); } catch {} }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl"
+              style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}
+              data-testid="channel-info-mute-toggle"
+            >
+              <span className="flex items-center gap-2 text-sm" style={{ color: "var(--text-primary)" }}>
+                {conversation.is_muted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                {conversation.is_muted ? t("unmute") : t("mute")}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                {conversation.is_muted ? t("on") || "ON" : t("off") || "OFF"}
+              </span>
+            </button>
             {error && <div className="text-xs" style={{ color: "#E5484D" }}>{error}</div>}
           </div>
 

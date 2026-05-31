@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut, Loader2, Ban } from "lucide-react";
+import { X, Check, Search, Plus, Camera, Crown, UserMinus, LogOut, Loader2, Ban, Bell, BellOff } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../ui/dialog";
 import { useI18n } from "../../lib/i18n";
 import { InviteLinkSection, PublicHandleSection } from "./InfoSections";
@@ -192,6 +192,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
     searchUsers,
     listMembers, listBanned, banMember, unbanMember, transferOwnership,
     updateAdminRole,
+    togglePinMute,
   } = useMessengerActions();
   const [members, setMembers] = useState([]);
   const [memberQ, setMemberQ] = useState("");
@@ -557,7 +558,22 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
 
         <div className="px-5 pb-3 space-y-3">
           <PublicHandleSection conversation={conversation} endpoint="groups" />
-          <InviteLinkSection conversation={conversation} endpoint="groups" />
+          {isAdmin && <InviteLinkSection conversation={conversation} endpoint="groups" />}
+          {/* Phase 11 — mute toggle visible to ALL members */}
+          <button
+            onClick={async () => { try { await togglePinMute(convId, "mute", !conversation.is_muted); } catch {} }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl"
+            style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}
+            data-testid="group-info-mute-toggle"
+          >
+            <span className="flex items-center gap-2 text-sm" style={{ color: "var(--text-primary)" }}>
+              {conversation.is_muted ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+              {conversation.is_muted ? t("unmute") : t("mute")}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              {conversation.is_muted ? t("on") || "ON" : t("off") || "OFF"}
+            </span>
+          </button>
         </div>
 
         <div className="px-5 py-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
