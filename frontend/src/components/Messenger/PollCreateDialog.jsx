@@ -49,7 +49,7 @@ export const PollCreateDialog = ({ open, onOpenChange, conversationId }) => {
     setOptions((arr) => arr.filter((_, idx) => idx !== i));
   };
 
-  const cleanOptions = options.map((s) => s.trim()).filter((s) => s.length > 0);
+  const cleanOptions = options.map((s) => s.replace(/[\u200B-\u200D\uFEFF]/g, "").trim()).filter((s) => s.length > 0);
   const hasDupes = new Set(cleanOptions).size !== cleanOptions.length;
   const canSubmit =
     question.trim().length > 0 &&

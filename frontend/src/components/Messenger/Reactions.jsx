@@ -43,7 +43,14 @@ export const ReactionChips = ({ message, convId }) => {
       {entries.map(([emoji, info]) => (
         <button
           key={emoji}
-          onClick={() => toggleReaction(message.id, emoji, convId).catch(() => {})}
+          onClick={(e) => {
+            // Phase 26 Bug 6 — never bubble; tap on a reaction must NOT open the bubble context menu.
+            e.stopPropagation();
+            e.preventDefault();
+            toggleReaction(message.id, emoji, convId).catch(() => {});
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
           className="text-[11px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full transition-transform hover:scale-105"
           style={
             info.mine

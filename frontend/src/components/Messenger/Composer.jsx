@@ -376,6 +376,8 @@ export const Composer = ({ conversationId, onUploadError }) => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.7 }}
               transition={{ duration: 0.18, ease: [0.34, 1.56, 0.64, 1] }}
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
               onClick={submit}
               disabled={sending}
               className="gm-btn-primary gm-press hover:scale-105 active:scale-95 transition-transform"

@@ -414,7 +414,10 @@ class CreatePollRequest(BaseModel):
     @field_validator("options")
     @classmethod
     def _opts(cls, v: List[str]) -> List[str]:
-        cleaned = [s.strip() for s in v]
+        # Phase 26 Bug 1 — strip zero-width chars (NBSP/ZWNJ/ZWJ/BOM) so visually
+        # distinct Persian/Arabic options aren't falsely flagged as duplicates.
+        zw = "".maketrans({"\u200B": None, "\u200C": None, "\u200D": None, "\uFEFF": None, "\u00A0": " "})
+        cleaned = [s.translate(zw).strip() for s in v]
         for s in cleaned:
             if not s:
                 raise ValueError("Poll options cannot be empty")
@@ -1516,6 +1519,12 @@ async def delete_message(
             "media": None,
         }},
     )
+    # Phase 26 Bug 3 — drop the id from conversation.pinned_message_ids if pinned
+    if message_id in (conv.get("pinned_message_ids") or []):
+        await db.conversations.update_one(
+            {"_id": msg["conversation_id"]},
+            {"$pull": {"pinned_message_ids": message_id}},
+        )
     # Update conversation last_message if this was the latest
     if conv.get("last_message_at") == msg["created_at"]:
         new_last = await _format_last_message_for_conv(msg["conversation_id"])

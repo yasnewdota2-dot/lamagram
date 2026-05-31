@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Megaphone, LogOut, Search, Crown, UserMinus, Ban, Bell, BellOff } from "lucide-react";
+import { X, Megaphone, LogOut, Search, Crown, UserMinus, Ban, Bell, BellOff, Pencil, Check } from "lucide-react";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
 import { useMessengerActions } from "../../lib/messenger";
@@ -17,6 +17,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
     listMembers, listBanned, banMember, unbanMember, transferOwnership,
     setMuted,
     updateAdminRole,
+    updateChannel,
   } = useMessengerActions();
 
   const [members, setMembers] = useState([]);
@@ -26,6 +27,8 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
   const [confirmAct, setConfirmAct] = useState(null);
   const [editRoleFor, setEditRoleFor] = useState(null);
   const [error, setError] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const memDebTmr = useRef(null);
 
   const g = conversation?.group || {};
@@ -98,7 +101,51 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
             <div className="flex items-center gap-3">
               <GroupAvatar group={{ title: g.title, avatar_url: g.avatar_url }} size={56} />
               <div className="min-w-0">
-                <div className="font-semibold truncate" style={{ color: "var(--text-primary)" }}>{g.title}</div>
+                {editingTitle ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") setEditingTitle(false); }}
+                      dir="auto"
+                      autoFocus
+                      maxLength={50}
+                      className="flex-1 min-w-0 px-2 py-1 text-sm rounded-md outline-none"
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)", color: "var(--text-primary)" }}
+                      data-testid="channel-info-title-edit"
+                    />
+                    <button
+                      onClick={async () => {
+                        const t2 = titleDraft.trim();
+                        if (t2.length < 3) { setEditingTitle(false); return; }
+                        try {
+                          await updateChannel(convId, { title: t2 });
+                          setEditingTitle(false);
+                        } catch (e) { setError(e?.response?.data?.detail || "Update failed"); }
+                      }}
+                      className="p-1 rounded-md hover:bg-white/10"
+                      style={{ color: "var(--accent-blue, #3B9EFF)" }}
+                      data-testid="channel-info-title-save"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <div className="font-semibold truncate" style={{ color: "var(--text-primary)" }} data-testid="channel-info-title">{g.title}</div>
+                    {(isAdmin || isOwner) && (
+                      <button
+                        onClick={() => { setTitleDraft(g.title || ""); setEditingTitle(true); }}
+                        className="p-1 rounded-md hover:bg-white/10 opacity-60 hover:opacity-100"
+                        style={{ color: "var(--text-primary)" }}
+                        data-testid="channel-info-title-pencil"
+                        title={t("rename") || "Rename"}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="text-xs" style={{ color: "var(--text-muted)" }}>
                   {(g.member_count || 0)} {t("subscribers")}
                   {conversation.is_public && conversation.handle && <span className="ml-2 text-white/40">· @{conversation.handle}</span>}

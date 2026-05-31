@@ -180,27 +180,8 @@ const MessageBubbleImpl = ({
     });
   };
 
-  if (message.deleted_for_everyone) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`flex w-full ${mine ? "justify-end" : "justify-start"} px-2`}
-        data-testid={testId || `message-tombstone-${message.id}`}
-      >
-        <div
-          className="max-w-[70%] px-3 py-2 rounded-2xl text-xs italic"
-          style={{
-            background: "var(--bubble-theirs-bg)",
-            border: "1px solid var(--border-glass)",
-            color: "var(--text-muted)",
-          }}
-        >
-          {t("messageWasDeleted")}
-        </div>
-      </motion.div>
-    );
-  }
+  // Phase 26 Bug 2 — fully hide deleted messages (no tombstone).
+  if (message.deleted_for_everyone) return null;
 
   const created = new Date(message.created_at).getTime();
   const now = Date.now();

@@ -627,6 +627,14 @@ export const MessengerProvider = ({ children }) => {
     }));
     return data;
   }, []);
+  const updateChannel = useCallback(async (convId, patch) => {
+    const { data } = await api.patch(`/channels/${convId}`, patch);
+    store.set((s) => ({
+      ...s,
+      conversations: s.conversations.map((c) => (c.id === convId ? { ...c, ...data } : c)),
+    }));
+    return data;
+  }, []);
   const uploadGroupAvatar = useCallback(async (convId, file) => {
     const form = new FormData();
     form.append("file", file);
@@ -1233,6 +1241,7 @@ export const MessengerProvider = ({ children }) => {
       patchConversation,
       removeChannelMember,
       updateGroup,
+      updateChannel,
       uploadGroupAvatar,
       addGroupMembers,
       removeGroupMember,
@@ -1295,6 +1304,7 @@ export const MessengerProvider = ({ children }) => {
       patchConversation,
       removeChannelMember,
       updateGroup,
+      updateChannel,
       uploadGroupAvatar,
       addGroupMembers,
       removeGroupMember,

@@ -279,3 +279,12 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - **Bug 8** Frontend: new `lib/useUsersBatch.js` — module-level Map cache + 50 ms microtask debouncer that coalesces concurrent `useUsersBatch(ids)` subscribers into a single network call (chunked at 100 ids). Tombstones for missing ids prevent re-fetch storms. New `AvatarStack` component renders up to N overlapping circular avatars (size 18 by default), with image fallback to gradient-initial; `+N` text appended if `ids.length > max`. RTL-friendly via `marginInlineStart`.
 - **Bug 8** PollMessage: under each option with `!isAnon && votes.length > 0`, an `<AvatarStack ids={opt.votes} max={3} />` renders inline; verified `poll voter avatar stacks visible: 5` across the seeded test polls. Anonymous polls correctly hide the stack.
 - **Smart bonus** PollMessage: tap on `pct %` label now opens the View Results dialog (non-anonymous + viewer-has-voted gate). Verified `results dialog opened via pct tap: True`.
+
+## Phase 26 — Critical Bug Fixes (2026-05-31)
+- **Bug 1 (Persian dedup false-positive)**: PollCreateDialog `cleanOptions` strips zero-width chars (`\u200B-\u200D\uFEFF`) before dedup; backend `CreatePollRequest._opts` does the same via `str.translate`. Verified: `["جثثث","جثثثا","قرمز"]` accepted live.
+- **Bug 2 (Tombstone removed)**: `MessageBubble` returns `null` for `deleted_for_everyone` messages — no more "Message was deleted" placeholder.
+- **Bug 3 (Pin list cleanup on delete)**: backend `delete_message` issues `$pull` on `conversation.pinned_message_ids` when the deleted id was pinned.
+- **Bug 4 (Channel title not editable)**: added `updateChannel` action to `messenger.jsx`; ChannelInfoDialog now has inline edit-title (Pencil button → input → Save), mirroring GroupDialogs pattern. Verified: `PATCH /api/channels/{id}` accepts `"کانال تست فارسی"` Persian title.
+- **Bug 5 (Mobile keyboard close on send)**: Composer send button now `onMouseDown/onTouchStart={(e)=>e.preventDefault()}` to prevent textarea blur during the tap; existing `taRef.current?.focus()` in `finally` continues to keep IME open.
+- **Bug 6 (Reaction tap opens menu)**: Reaction chips in `Reactions.jsx` now `e.stopPropagation()` + `e.preventDefault()` on click and also stop propagation on mousedown/touchstart so the parent bubble's long-press / context menu never fires.
+- P1 Bugs 7 (Group Info ultra-compact) and 8 (single-vote retract) — **DEFERRED** to next pass on user signal.
