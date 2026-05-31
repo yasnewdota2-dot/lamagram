@@ -677,3 +677,111 @@ html, body { background: var(--bg-base) !important; color: var(--text-primary); 
 :root[data-theme="light"] .gm-chip {
   color: var(--text-secondary) !important;
 }
+
+/* =========================================================================
+   Phase 17 — explicit responsive layer (mobile / tablet / desktop).
+   Targets `data-testid` hooks so changes are surgical and don't fight the
+   tailwind utility soup elsewhere.
+   ========================================================================= */
+
+/* --- Tablet (768-1023px) ------------------------------------------------- */
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Sidebar profile/list rows: tighter row height */
+  [data-testid^="chat-item-"] { min-height: 60px; }
+  /* Dialogs centered modal at sensible width */
+  [role="dialog"] [data-testid$="-dialog"],
+  [data-testid="new-group-dialog"],
+  [data-testid="new-channel-dialog"],
+  [data-testid="forward-dialog-content"],
+  [data-testid="join-dialog"] {
+    max-width: 480px !important;
+  }
+  /* Right-side drawer panels (UserProfile / PublicChatPreview) */
+  [data-testid="user-profile-drawer"],
+  [data-testid="public-chat-preview-drawer"] {
+    max-width: 320px !important;
+    right: 0 !important;
+    left: auto !important;
+  }
+  /* Channel/Group info panel */
+  [data-testid="channel-info-dialog"],
+  [data-testid="group-info-dialog"] {
+    max-width: 420px !important;
+  }
+}
+
+/* --- Desktop (≥1024px) --------------------------------------------------- */
+@media (min-width: 1024px) {
+  /* Sidebar rows: even tighter, more like Telegram desktop */
+  [data-testid^="chat-item-"] { min-height: 56px; }
+  /* Body / heading sizes — bump slightly for desktop readability */
+  body { font-size: 15px; }
+  /* Composer centered with cap so it doesn't stretch on ultrawide */
+  [data-testid="composer"] > div:first-child {
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* Image / video bubble media caps */
+  [data-testid="messages-scroll"] img,
+  [data-testid="messages-scroll"] video {
+    max-width: 400px;
+  }
+  /* Dialogs */
+  [data-testid="new-group-dialog"],
+  [data-testid="new-channel-dialog"],
+  [data-testid="forward-dialog-content"],
+  [data-testid="join-dialog"] {
+    max-width: 560px !important;
+  }
+  [data-testid="channel-info-dialog"],
+  [data-testid="group-info-dialog"] {
+    max-width: 480px !important;
+  }
+  /* Right-side drawers — slightly wider on desktop */
+  [data-testid="user-profile-drawer"],
+  [data-testid="public-chat-preview-drawer"] {
+    max-width: 360px !important;
+    right: 0 !important;
+    left: auto !important;
+  }
+  /* Thinner scrollbars on desktop where mice are the norm */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  /* Bigger, more visible hover state on rows */
+  [data-testid^="chat-item-"]:hover {
+    background: rgba(255,255,255,0.08);
+  }
+  :root[data-theme="light"] [data-testid^="chat-item-"]:hover {
+    background: rgba(15,20,40,0.06);
+  }
+}
+
+/* --- Auth pages (login/signup) — centered card on tablet/desktop --------- */
+@media (min-width: 768px) {
+  [data-testid="login-card"],
+  [data-testid="signup-card"] {
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* --- Settings — centered column on tablet/desktop ------------------------ */
+@media (min-width: 768px) {
+  [data-testid="settings-page"] > .container,
+  [data-testid="settings-root"] {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* Cursor: pointer on all clearly interactive elements that may have missed it */
+button:not(:disabled), [role="button"], [data-testid$="-button"],
+[data-testid^="chat-item-"], [data-testid^="message-actions-"],
+[data-testid$="-toggle"] {
+  cursor: pointer;
+}
+
+/* Never let any layout overflow horizontally */
+html, body, #root { overflow-x: hidden; max-width: 100vw; }

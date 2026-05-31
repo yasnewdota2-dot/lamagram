@@ -240,7 +240,7 @@ const MessageBubbleImpl = ({
           if (selectionMode) { onToggleSelect?.(message); return; }
           setMenuOpen(true);
         }}
-        className={`relative max-w-[78%] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} cursor-pointer ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
+        className={`relative max-w-[78%] md:max-w-[70%] lg:max-w-[60%] lg:max-w-[min(60%,560px)] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} cursor-pointer ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
         data-testid={isSelected ? `message-selected-${message.id}` : undefined}
         style={
           emojiOnly
