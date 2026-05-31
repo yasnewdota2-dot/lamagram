@@ -1,0 +1,87 @@
+version: "3.9"
+
+# ----------------------------------------------------------------------------
+# Lamagram production stack.
+#
+# Three internal services (mongo, backend, frontend) sit on the `lamagram-net`
+# bridge network and are NOT exposed to the host. Only `nginx` publishes ports
+# 80 and 443 — it terminates TLS and reverse-proxies everything else.
+#
+# Run:   docker compose up -d --build
+# Logs:  docker compose logs -f
+# ----------------------------------------------------------------------------
+
+networks:
+  lamagram-net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: lamagram-mongo
+    restart: unless-stopped
+    networks: [lamagram-net]
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lamagram-backend
+    restart: unless-stopped
+    networks: [lamagram-net]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URL: ${MONGO_URL:-mongodb://mongo:27017}
+      DB_NAME: ${DB_NAME:-lamagram}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${DOMAIN}}
+    volumes:
+      # Persist uploaded media across container rebuilds.
+      - ./backend/uploads:/app/uploads
+    expose:
+      - "8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # CRA bakes REACT_APP_* into the bundle at build time.
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-https://${DOMAIN}}
+    container_name: lamagram-frontend
+    restart: unless-stopped
+    networks: [lamagram-net]
+    expose:
+      - "80"
+
+  nginx:
+    image: nginx:alpine
+    container_name: lamagram-nginx
+    restart: unless-stopped
+    networks: [lamagram-net]
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # Bind-mount the host's Let's Encrypt directory so cert renewal is automatic.
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Optional: certbot webroot challenge path (used if you migrate to certbot --webroot)
+      - ./nginx/acme-challenge:/var/www/certbot:ro
+    environment:
+      DOMAIN: ${DOMAIN}
