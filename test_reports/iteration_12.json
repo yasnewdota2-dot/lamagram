@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 24A verified end-to-end: (a) Group Info dialog avatar measured exactly 56x56 px with inline style 'width:56px; height:56px'; (b) System pin/unpin pills render correctly in DM, Group and Channel with i18n EN+FA, tap-to-jump scrolls target into view without 'not in view' toast, and long-press opens Reply/Delete menu with delete-for-everyone option for own <24h pills. All 7 acceptance criteria pass. One minor non-blocking React console warning observed: 'didFire' prop spread onto DOM button by useLongPress hook.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "console_warnings": [
+      {"component": "SystemPinMessage.jsx", "issue": "React warning: 'didFire' prop is spread onto the DOM <button> element via {...lp} (output of useLongPress). Cosmetic only. Fix: destructure { didFire, ...lp } and only spread lp on the DOM element.", "priority": "LOW"}
+    ]
+  },
+  "test_evidence": {
+    "T1_group_avatar": "{style: 'width: 56px; height: 56px; ...', w: 56, h: 56} — exact 56x56 match",
+    "T2_dm_pill_en": "system-pin-05f1f4cf-... text='Alice pinned this message'",
+    "T3_group_pills_en": ["system-pin-291c80b1-... 'Alice pinned a message'", "system-pin-d4124a10-... 'Alice unpinned a message'"],
+    "T4_channel_pill_en": "system-pin-ef20d3a2-... 'A message was pinned' (no actor name, as spec'd)",
+    "T5_tap_jump": "Clicked DM pill → target msg d2671a3f present in DOM with bbox y=222 (visible viewport), no 'not in view' toast",
+    "T6_long_press_menu": "Reply action visible=True, Delete action visible=True, delete-dialog visible=True, delete-for-all checkbox visible=True (own <24h pin)",
+    "T7_i18n_fa": {
+      "html_dir": "rtl",
+      "dm": "Alice این پیام را سنجاق کرد",
+      "group_pin": "Alice یک پیام را سنجاق کرد",
+      "group_unpin": "Alice یک پیام را از سنجاق برداشت",
+      "channel": "یک پیام سنجاق شد"
+    }
+  },
+  "test_report_links": ["/app/test_reports/iteration_12.json"],
+  "action_items": [
+    "OPTIONAL/LOW: In SystemPinMessage.jsx remove or filter `didFire` (and any other non-DOM props from useLongPress) before spreading on the <button>. Currently produces a 'React does not recognize the didFire prop' console warning on every render."
+  ],
+  "critical_code_review_comments": [
+    "useLongPress return value is spread directly onto a DOM element ({...lp}) — fix by destructuring non-DOM properties (didFire) before spread. Functional behaviour fine.",
+    "Chat header in channel reads 'P12 ChannelChannel' when extracted via textContent because the 'Channel' kind badge is a sibling node inside chat-header-name. Cosmetically fine in UI (badge styled separately), but make sure testIds/screenshots don't get confused — not a bug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "alice/password123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Used pre-seeded data: DM 015deeee... (system_pin 05f1f4cf), Group 2210e6c8... (system_pin 291c80b1 + system_unpin d4124a10 → target msg d2671a3f), Channel 7423ac3a... (system_pin ef20d3a2 → target msg e60777b4).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sidebar testIds use UUIDs not slugs for non-DM (e.g. chat-list-item-<uuid>). DM testIds use username (chat-list-item-bob). To open a group/channel by ID, query for chat-list-item-<uuid>. Long-press in this app is simulated via page.mouse.move/down/up at pill center with 750ms hold (matches Phase 12 convention). DM clicking chat-header-name opens UserProfileDrawer (with backdrop) — to test other things after, press Escape or close the drawer first to avoid pointer interception."
+}

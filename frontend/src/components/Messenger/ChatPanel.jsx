@@ -14,6 +14,7 @@ import { UserAvatar } from "../Avatar";
 import { OnlineDot } from "./OnlineDot";
 import { TypingDots } from "./TypingDots";
 import { MessageBubble } from "./MessageBubble";
+import { SystemPinMessage } from "./SystemPinMessage";
 import { Composer } from "./Composer";
 import { Lightbox } from "./Lightbox";
 import { ForwardDialog } from "./ForwardDialog";
@@ -588,6 +589,17 @@ export const ChatPanel = ({ conversation }) => {
                   </div>
                 )}
                 <div data-msgid={m.id} style={{ marginTop: mt }}>
+                  {m.type === "system_pin" || m.type === "system_unpin" ? (
+                    <SystemPinMessage
+                      message={m}
+                      conversation={conversation}
+                      groupMembers={groupMembers}
+                      onJumpToReply={handleJumpToReply}
+                      onReply={handleReply}
+                      onDelete={handleDelete}
+                      testId={`message-${m.id}`}
+                    />
+                  ) : (
                   <MessageBubble
                     message={m}
                     mine={mine}
@@ -606,6 +618,7 @@ export const ChatPanel = ({ conversation }) => {
                     onToggleSelect={toggleSelect}
                     onEnterSelection={enterSelection}
                   />
+                  )}
                 </div>
               </React.Fragment>
             );

@@ -421,6 +421,7 @@ def public_message(m: dict) -> dict:
         "pinned_in_conv": bool(m.get("pinned_in_conv")),
         "pinned_by_user_id": m.get("pinned_by_user_id"),
         "view_count": int(m.get("view_count") or 0),
+        "meta": m.get("meta") or None,
     }
 
 async def build_reply_snapshot(reply_to_message_id: str, conv_id: str) -> dict:

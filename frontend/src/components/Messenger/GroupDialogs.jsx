@@ -329,7 +329,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
 
         <div className="px-5 pb-3 flex items-center gap-4">
           <label className={isAdmin ? "relative cursor-pointer" : "relative"}>
-            <GroupAvatar group={conversation?.group} size={64} />
+            <GroupAvatar group={conversation?.group} size={56} />
             {isAdmin && (
               <span className="absolute inset-0 rounded-full flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity">
                 <Camera className="w-4 h-4 text-white" />

@@ -268,6 +268,12 @@ const DICTIONARY = {
     multiDeleteTitle: "Delete {n} messages?",
     copy: "Copy",
     copied: "Copied",
+    "system.pin.dm": "{name} pinned this message",
+    "system.pin.group": "{name} pinned a message",
+    "system.pin.channel": "A message was pinned",
+    "system.unpin.dm": "{name} unpinned this message",
+    "system.unpin.group": "{name} unpinned a message",
+    "system.unpin.channel": "A message was unpinned",
   },
   fa: {
     appName: "گلس مسنجر",
@@ -522,6 +528,12 @@ const DICTIONARY = {
     joinThisChannel: "پیوستن به این کانال",
     openConversation: "باز کردن",
     publicChats: "چت‌های عمومی",
+    "system.pin.dm": "{name} این پیام را سنجاق کرد",
+    "system.pin.group": "{name} یک پیام را سنجاق کرد",
+    "system.pin.channel": "یک پیام سنجاق شد",
+    "system.unpin.dm": "{name} سنجاق این پیام را برداشت",
+    "system.unpin.group": "{name} یک پیام را از سنجاق برداشت",
+    "system.unpin.channel": "یک پیام از سنجاق برداشته شد",
   },
 };
 
