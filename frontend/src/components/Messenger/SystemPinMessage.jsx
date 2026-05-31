@@ -64,6 +64,7 @@ export const SystemPinMessage = ({
   const label = (t(i18nKey) || "").replace("{name}", actorName || "");
 
   const lp = useLongPress(() => setMenuOpen(true), { threshold: 500 });
+  const { didFire, ...lpHandlers } = lp;
 
   const created = new Date(message.created_at).getTime();
   const now = Date.now();
@@ -88,7 +89,7 @@ export const SystemPinMessage = ({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
-            {...lp}
+            {...lpHandlers}
             onClick={handleTap}
             className="group inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] cursor-pointer transition-colors"
             style={{

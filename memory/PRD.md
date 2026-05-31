@@ -228,3 +228,10 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 - Phase 8A leftover (P2): `ChannelDialogs.jsx` border/toggle polish in light + dark.
 - Optional: surface `Edit role` in `ChannelInfoDialog.jsx` (PATCH endpoint already supports channels; title display is intentionally skipped per spec).
 
+
+## Phase 24A — Pin → System Message + Group Avatar Tweak (2026-05-31)
+- GroupDialogs: Group Info dialog header avatar 64 → 56 (parity with Channel Info).
+- Backend `public_message` now surfaces `meta` (was being stripped). pin_message / unpin_message endpoints already emitted system_pin / system_unpin events; with `meta` exposed, frontend can route them correctly.
+- New `SystemPinMessage` component: centered subtle pill (no bubble), tap = jump-to-pinned (reuses Phase 12 RAF + loadOlderMessages backfill), long-press = Reply + Delete menu (one-side / both-side <24h).
+- i18n: 6 new flat keys with {name} client-side placeholder — `system.pin.{dm|group|channel}` & `system.unpin.{dm|group|channel}` (EN + FA).
+- Verified end-to-end (iteration_12.json): 7/7 acceptance criteria pass; avatar measured 56×56; pills rendered EN+FA in DM/Group/Channel; tap-jump scrolls without "not in view" toast; long-press menu shows both Reply and Delete.
