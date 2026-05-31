@@ -106,7 +106,20 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
                     <input
                       value={titleDraft}
                       onChange={(e) => setTitleDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Escape") setEditingTitle(false); }}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Escape") { setEditingTitle(false); return; }
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const t2 = titleDraft.trim();
+                          if (t2.length < 3) return;
+                          // eslint-disable-next-line no-console
+                          console.log("[rename] PATCH (Enter)", convId, { title: t2 });
+                          try {
+                            await updateChannel(convId, { title: t2 });
+                            setEditingTitle(false);
+                          } catch (err) { setError(err?.response?.data?.detail || "Update failed"); }
+                        }
+                      }}
                       dir="auto"
                       autoFocus
                       maxLength={50}
@@ -115,19 +128,23 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
                       data-testid="channel-info-title-edit"
                     />
                     <button
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={async () => {
                         const t2 = titleDraft.trim();
                         if (t2.length < 3) { setEditingTitle(false); return; }
+                        // eslint-disable-next-line no-console
+                        console.log("[rename] PATCH (Save)", convId, { title: t2 });
                         try {
                           await updateChannel(convId, { title: t2 });
                           setEditingTitle(false);
                         } catch (e) { setError(e?.response?.data?.detail || "Update failed"); }
                       }}
-                      className="p-1 rounded-md hover:bg-white/10"
+                      className="p-1.5 rounded-md hover:bg-white/10"
                       style={{ color: "var(--accent-blue, #3B9EFF)" }}
                       data-testid="channel-info-title-save"
+                      aria-label="Save"
                     >
-                      <Check className="w-4 h-4" />
+                      <Check className="w-5 h-5" />
                     </button>
                   </div>
                 ) : (
@@ -188,10 +205,10 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
               const isMe = m.id === user?.id;
               const isMemberOwner = !!m.is_owner;
               return (
-                <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl group" data-testid={`channel-info-member-${m.username}`}>
-                  <UserAvatar user={m} size={36} />
+                <div key={m.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl group" data-testid={`channel-info-member-${m.username}`}>
+                  <UserAvatar user={m} size={32} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm truncate" style={{ color: "var(--text-primary)" }}>{m.display_name || m.username}{isMe && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}> (you)</span>}</div>
+                    <div className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>{m.display_name || m.username}{isMe && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}> (you)</span>}</div>
                     <div className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>@{m.username}</div>
                   </div>
                   {isMemberOwner ? (
