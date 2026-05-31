@@ -70,11 +70,11 @@ export default function Home() {
   };
 
   return (
-    <div className="relative min-h-screen" data-testid="home-page">
+    <div className="relative min-h-[100dvh]" data-testid="home-page">
       <GlassBackground />
 
       <div className="relative z-10 mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 lg:py-6">
-        <div className="grid gap-4 lg:gap-6 h-[calc(100vh-1rem)] lg:h-[calc(100vh-3rem)] grid-cols-1 md:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr]">
+        <div className="grid gap-4 lg:gap-6 h-[calc(100dvh-1rem)] lg:h-[calc(100dvh-3rem)] grid-cols-1 md:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr]">
           {/* Sidebar */}
           <motion.aside
             initial={{ opacity: 0, x: -16 }}

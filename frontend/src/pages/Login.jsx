@@ -36,7 +36,7 @@ export default function Login() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center px-4 py-10" data-testid="login-page">
+    <div className="relative min-h-[100dvh] flex items-center justify-center px-4 py-10" data-testid="login-page">
       <GlassBackground />
       <div className="absolute top-5 right-5 z-10">
         <LanguageToggle />

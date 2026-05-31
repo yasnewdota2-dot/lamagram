@@ -118,7 +118,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative min-h-screen" data-testid="settings-page">
+    <div className="relative min-h-[100dvh]" data-testid="settings-page">
       <GlassBackground />
       <div className="relative z-10 mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-12">
         <motion.div

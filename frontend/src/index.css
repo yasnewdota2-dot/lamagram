@@ -785,3 +785,23 @@ button:not(:disabled), [role="button"], [data-testid$="-button"],
 
 /* Never let any layout overflow horizontally */
 html, body, #root { overflow-x: hidden; max-width: 100vw; }
+
+/* =========================================================================
+   Phase 19 — viewport-height fix.
+   `100vh` on mobile browsers includes the collapsing chrome (address bar),
+   making the app render taller than the visible area → bottom is clipped or
+   blank. `100dvh` (dynamic viewport height) tracks the visible viewport
+   live as the chrome shows/hides.
+   ========================================================================= */
+html, body, #root {
+  height: 100vh;        /* fallback for very old browsers */
+  height: 100dvh;       /* modern: tracks the visible viewport */
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#root > * {
+  min-height: 100%;
+}

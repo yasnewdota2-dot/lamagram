@@ -16,7 +16,7 @@ import { ThemeProvider } from "./lib/theme";
 import { JoinByTokenPage, JoinByHandlePage } from "./pages/DeepLink";
 
 const Loader = () => (
-  <div className="min-h-screen flex items-center justify-center" data-testid="app-loading">
+  <div className="min-h-[100dvh] flex items-center justify-center" data-testid="app-loading">
     <div className="gm-glass rounded-2xl px-6 py-4 text-sm text-white/80">Loading…</div>
   </div>
 );

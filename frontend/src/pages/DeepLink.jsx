@@ -15,7 +15,7 @@ const safeReturnPath = (p) => {
 };
 
 const Shell = ({ children }) => (
-  <div className="relative min-h-screen flex items-center justify-center p-4">
+  <div className="relative min-h-[100dvh] flex items-center justify-center p-4">
     <GlassBackground />
     <div
       className="relative w-full max-w-sm rounded-3xl px-6 py-8 text-center"
