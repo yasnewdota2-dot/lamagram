@@ -51,3 +51,9 @@ frontend/.env
 backend/uploads/
 nginx/certs/
 nginx/acme-challenge/
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
