@@ -73,7 +73,9 @@ export const PollMessage = ({
     if (isClosed || voting) return;
     setVoting(true);
     try {
-      await votePoll(message.id, [optionId]);
+      // Phase 26b Bug 8 — tap on the option I already voted for retracts the vote.
+      const isRetract = myVotes.length === 1 && myVotes[0] === optionId;
+      await votePoll(message.id, isRetract ? [] : [optionId]);
     } catch (_e) {
       /* WS will sync; ignore transient error */
     } finally {

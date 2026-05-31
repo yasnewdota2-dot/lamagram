@@ -114,7 +114,10 @@ const MessageBubbleImpl = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const { openUserProfile } = useUserProfile();
   const { openPublicChat } = usePublicChatPreview();
-  const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage, loadGroupMembers } = useMessengerActions();
+  const { setActiveConv, openOrCreateConversation, pinMessage, unpinMessage, loadGroupMembers, toggleReaction } = useMessengerActions();
+  // Phase 26b smart bonus — double-tap = ❤️
+  const lastTapRef = React.useRef(0);
+  const [heartBurst, setHeartBurst] = useState(0);
   const { user: meUser } = useAuth();
   const currentUserId = meUser?.id;
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -219,10 +222,21 @@ const MessageBubbleImpl = ({
           e.stopPropagation();
           if (lp.didFire?.()) return;
           if (selectionMode) { onToggleSelect?.(message); return; }
+          // Phase 26b smart bonus — double-tap (≤320ms) toggles a ❤️ reaction.
+          const now = Date.now();
+          if (now - lastTapRef.current < 320) {
+            lastTapRef.current = 0;
+            const convId = message.conversation_id;
+            toggleReaction?.(message.id, "❤️", convId).catch(() => {});
+            setHeartBurst((n) => n + 1);
+            return;
+          }
+          lastTapRef.current = now;
           setMenuOpen(true);
         }}
         className={`relative max-w-[78%] md:max-w-[70%] lg:max-w-[60%] lg:max-w-[min(60%,560px)] rounded-2xl ${emojiOnly ? "px-1 py-0" : "px-3 py-2"} cursor-pointer ${isSelected ? "ring-2 ring-[#3B9EFF] ring-offset-2 ring-offset-transparent" : ""}`}
         data-testid={isSelected ? `message-selected-${message.id}` : undefined}
+        data-msg-id={message.id}
         style={
           emojiOnly
             ? { background: "transparent", WebkitTouchCallout: "none" }

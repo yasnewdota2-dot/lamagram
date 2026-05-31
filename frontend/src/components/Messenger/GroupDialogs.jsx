@@ -459,10 +459,10 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
             const isMe = m.id === user?.id;
             const isMemberOwner = !!m.is_owner;
             return (
-              <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl group" data-testid={`group-info-member-${m.username}`}>
-                <UserAvatar user={m} size={36} />
+              <div key={m.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl group" data-testid={`group-info-member-${m.username}`}>
+                <UserAvatar user={m} size={32} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-white truncate">
+                  <div className="text-[13px] text-white truncate">
                     {m.display_name || m.username}
                     {m.admin_title && (
                       <span className="ml-1 text-[10px] text-[#C9B8FF]" data-testid={`group-info-admin-title-${m.username}`}>

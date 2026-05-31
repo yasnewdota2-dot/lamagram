@@ -1073,14 +1073,20 @@ export const MessengerProvider = ({ children }) => {
     }
 
     if (data.type === "conversation_updated") {
-      const { conversation_id, is_pinned, is_muted } = data;
+      // Phase 26b Bug A — backend may send either a full `conversation` payload
+      // (channel/group rename) or a partial { is_pinned, is_muted } payload.
+      const fullConv = data.conversation;
+      const partialId = data.conversation_id;
+      const targetId = fullConv?.id || partialId;
+      if (!targetId) return;
       store.set((s) => ({
         ...s,
-        conversations: s.conversations.map((c) =>
-          c.id === conversation_id ? { ...c, is_pinned, is_muted } : c
-        ),
+        conversations: s.conversations.map((c) => {
+          if (c.id !== targetId) return c;
+          if (fullConv) return { ...c, ...fullConv };
+          return { ...c, is_pinned: data.is_pinned, is_muted: data.is_muted };
+        }),
       }));
-      fetchConversations().catch(() => {});
       return;
     }
 

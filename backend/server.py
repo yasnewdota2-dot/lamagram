@@ -430,7 +430,8 @@ class CreatePollRequest(BaseModel):
 
 class VotePollRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    option_ids: List[str] = Field(..., min_length=1, max_length=10)
+    # Phase 26b Bug 8 — `option_ids` can be empty list to retract the caller's existing votes.
+    option_ids: List[str] = Field(..., max_length=10)
 
 EDIT_WINDOW_SECONDS = 48 * 60 * 60       # 48 hours
 DELETE_ALL_WINDOW_SECONDS = 24 * 60 * 60  # 24 hours
@@ -1075,7 +1076,8 @@ async def vote_poll(
     if me_id not in conv["participants"]:
         raise HTTPException(403, "Not a participant")
     option_ids = list(dict.fromkeys(body.option_ids))  # dedupe preserving order
-    if not poll.get("allows_multiple") and len(option_ids) != 1:
+    # Phase 26b Bug 8 — empty `option_ids` retracts the caller's existing votes.
+    if option_ids and not poll.get("allows_multiple") and len(option_ids) != 1:
         raise HTTPException(400, "Poll allows a single option only")
     valid_ids = {o["id"] for o in poll.get("options") or []}
     for oid in option_ids:
