@@ -74,13 +74,13 @@ export default function Home() {
       <GlassBackground />
 
       <div className="relative z-10 mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 lg:py-6">
-        <div className={`grid gap-4 lg:gap-6 h-[calc(100vh-1rem)] lg:h-[calc(100vh-3rem)] ${isMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr]"}`}>
+        <div className="grid gap-4 lg:gap-6 h-[calc(100vh-1rem)] lg:h-[calc(100vh-3rem)] grid-cols-1 md:grid-cols-[300px_1fr] lg:grid-cols-[340px_1fr]">
           {/* Sidebar */}
           <motion.aside
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
-            className={`gm-glass rounded-3xl p-4 flex flex-col min-h-0 ${isMobile && activeConvId ? "hidden" : ""}`}
+            className={`gm-glass rounded-3xl p-4 flex flex-col min-h-0 ${activeConvId ? "hidden md:flex" : "flex"}`}
             data-testid="sidebar"
           >
             {/* Profile pill */}
@@ -203,7 +203,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: "easeOut", delay: 0.05 }}
-            className={`gm-glass rounded-3xl overflow-hidden flex flex-col min-h-0 ${isMobile && !activeConvId ? "hidden" : ""}`}
+            className={`gm-glass rounded-3xl overflow-hidden flex flex-col min-h-0 ${activeConvId ? "flex" : "hidden md:flex"}`}
             data-testid="chat-area"
           >
             <ChatPanel conversation={activeConv} />
