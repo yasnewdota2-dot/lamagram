@@ -444,7 +444,7 @@ export const GroupInfoDialog = ({ open, onOpenChange, conversation }) => {
               placeholder={t("searchMembers")}
               className="bg-transparent outline-none flex-1 text-sm"
               style={{ color: "var(--text-primary)" }}
-              data-testid="group-info-member-search"
+              data-testid="group-info-members-search"
             />
             {memberQ && (
               <button onClick={() => setMemberQ("")} className="p-0.5 rounded text-white/55 hover:text-white" aria-label="clear">

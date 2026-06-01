@@ -298,3 +298,19 @@ Consider monetising public channels: add a lightweight "Pinned promotion slot" a
 ## Phase 26c — Targeted Fixes (2026-05-31)
 - **Bug X1 (Channel rename Save not firing)**: ChannelInfoDialog Save button hardened — `onMouseDown e.preventDefault()` prevents input blur (which had been swallowing the click on some touch devices); button padding 1.5 / icon w-5 for a larger hit area; Enter-key handler in the input is a parallel path to Save. `console.log("[rename] PATCH ...")` traces added on both paths. Verified live: `NETWORK PATCH FIRED: PATCH /api/channels/...` and `channel-info-title after save: 'ChanRenamedX1'`.
 - **Bug X2 (Channel Info member rows still bloated)**: ChannelInfoDialog member row classes `gap-3 px-3 py-2` → `gap-2 px-2.5 py-1.5`, `UserAvatar size={36}` → `{32}`, name `text-sm` → `text-[13px]`. Live measurement (414 px viewport): `CHANNEL member avatar sizes: [{'w': 32, 'h': 32}]`. ✓
+
+## Phase 26d — Hard Root-Causes for FAIL 1 + FAIL 2 (2026-06-01)
+### FAIL 1 — Sidebar stale after Channel rename
+**Root cause**: `ChatRow` is wrapped in `React.memo(..., areEqual)` and the `areEqual` comparator only checked `id, unread, last_message_at, last_message, kind, is_pinned, is_muted, other_user.*`. **It never compared `conversation.group?.title`** — so even though store mutated correctly, memo returned `true` and the row never re-rendered.
+**Fix**: extended `areEqual` to also bail on `group.title`, `group.avatar_url`, and `group.member_count` deltas.
+**Live verification**: rename to `REFRESH-2289` → `SIDEBAR sees rename ('REFRESH-2289'): chat-list-item-7423ac3a-1e5a-4d54-bad0-8238d74bdd17` ✓
+
+### FAIL 2 — Member row "12 px / 0 px padding"
+**Root cause**: the previous tester selector `[data-testid^="channel-info-member-"]` was a **prefix match** that included the **search input** `channel-info-member-search` as its first hit. The 12 px and 0 padding were the input's metrics, not a row.
+**Fix**: renamed search input testids to `channel-info-members-search` / `group-info-members-search` (note the plural "members-" prefix) so future prefix-matches against `channel-info-member-{username}` won't collide.
+**Live verification** with correct selector (excluding `members-search`):
+```
+channel-info-member-alice  paddingY 6px/6px  gap 8px  avatar 32×32  nameFontSize 13px
+channel-info-member-bob    paddingY 6px/6px  gap 8px  avatar 32×32  nameFontSize 13px
+```
+✓ exactly the spec (32 px avatar, 13 px text, py-1.5 = 6 px).

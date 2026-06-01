@@ -272,6 +272,10 @@ const ChatRow = memo(
     if (a.kind !== b.kind) return false;
     if (a.is_pinned !== b.is_pinned) return false;
     if (a.is_muted !== b.is_muted) return false;
+    // Phase 26d FAIL 1 — group/channel rename must trigger re-render
+    if ((a.group?.title || "") !== (b.group?.title || "")) return false;
+    if ((a.group?.avatar_url || "") !== (b.group?.avatar_url || "")) return false;
+    if ((a.group?.member_count || 0) !== (b.group?.member_count || 0)) return false;
     const ao = a.other_user, bo = b.other_user;
     if (ao === bo) return true;
     if (!ao || !bo) return false;

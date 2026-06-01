@@ -194,7 +194,7 @@ export const ChannelInfoDialog = ({ open, onOpenChange, conversation }) => {
           <div className="px-5 pb-2">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--bg-glass)", border: "1px solid var(--border-glass)" }}>
               <Search className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
-              <input value={memberQ} onChange={(e) => setMemberQ(e.target.value)} placeholder={t("searchMembers")} className="bg-transparent outline-none flex-1 text-sm" style={{ color: "var(--text-primary)" }} data-testid="channel-info-member-search" />
+              <input value={memberQ} onChange={(e) => setMemberQ(e.target.value)} placeholder={t("searchMembers")} className="bg-transparent outline-none flex-1 text-sm" style={{ color: "var(--text-primary)" }} data-testid="channel-info-members-search" />
               {memberQ && <button onClick={() => setMemberQ("")} className="p-0.5 rounded text-white/55 hover:text-white" aria-label="clear"><X className="w-3 h-3" /></button>}
             </div>
           </div>
